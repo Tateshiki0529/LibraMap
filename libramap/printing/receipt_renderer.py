@@ -5,6 +5,7 @@ libramap.printing.receipt_renderer
 
 Pillow を使用して 58mm 感熱紙向けのレシート画像を生成する。
 書架位置マップ画像を含む ESC/POS 印刷用ラスタ画像を出力する。
+日本語フォント（MS ゴシック等）に対応し、文字化けを防ぐ。
 
 レシート構成（specs.md §13.1）:
     上部: タイトル・NDC・階数・書架コード
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING
 from PIL import Image, ImageDraw, ImageFont
 
 if TYPE_CHECKING:
-    from libramap.core.placement_engine import PlacementResult, ShelfSegment
+    from libramap.core.placement_engine import PlacementResult
 
 
 # 58mm 用紙の印刷可能幅（ピクセル、203dpi 換算）
@@ -69,11 +70,7 @@ class ReceiptRenderer:
 
     Pillow を使用して 58mm 幅のレシート用 PNG 画像を生成する。
     画像ラスタ印刷方式（specs.md §13.3）に対応した出力を行う。
-
-    色分け仕様（specs.md §14.3）:
-        - 通常棚セル: 灰色
-        - 対象セル: 黒塗り
-        - 禁帯出: 強調表示
+    Windows環境の日本語フォント（MSゴシック/メイリオ等）を自動ロードして文字化けを防ぐ。
     """
 
     def render(self, data: ReceiptData) -> Image.Image:
@@ -105,6 +102,20 @@ class ReceiptRenderer:
         image = self.render(data)
         image.save(output_path, format="PNG")
 
+    def _get_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """
+        利用可能な日本語フォントオブジェクトを取得する。
+        OS標準のフォントファイル名からロードを試みる。
+        """
+        font_names = ["msgothic.ttc", "meiryo.ttc", "msgothic.ttf"]
+        for name in font_names:
+            try:
+                return ImageFont.truetype(name, size)
+            except OSError:
+                continue
+        # フォールバック
+        return ImageFont.load_default()
+
     def _render_header(self, data: ReceiptData) -> Image.Image:
         """
         レシート上部（タイトル・NDC・階数・書架コード）を描画する。
@@ -115,9 +126,10 @@ class ReceiptRenderer:
         Returns:
             Image.Image: ヘッダー部分の画像
         """
+        font = self._get_font(FONT_SIZE_NORMAL)
         lines: list[str] = []
 
-        # タイトル（長い場合は折り返し）
+        # タイトル
         lines.append(f"【{data.title}】")
         if data.creator:
             lines.append(data.creator)
@@ -133,14 +145,16 @@ class ReceiptRenderer:
         else:
             lines.append("※ 要手動確認")
 
-        height = FONT_SIZE_NORMAL * (len(lines) + 1) + 20
+        # 行高さに合わせてキャンバスサイズを計算
+        line_height = FONT_SIZE_NORMAL + 6
+        height = line_height * len(lines) + 20
         img = Image.new("L", (RECEIPT_WIDTH_PX, height), 255)
         draw = ImageDraw.Draw(img)
 
         y = 10
         for line in lines:
-            draw.text((10, y), line, fill=0)
-            y += FONT_SIZE_NORMAL + 4
+            draw.text((10, y), line, fill=0, font=font)
+            y += line_height
 
         return img
 
@@ -154,6 +168,7 @@ class ReceiptRenderer:
         Returns:
             Image.Image: 書架コード部分の画像
         """
+        font = self._get_font(FONT_SIZE_SHELF_CODE)
         height = FONT_SIZE_SHELF_CODE + 30
         img = Image.new("L", (RECEIPT_WIDTH_PX, height), 255)
         draw = ImageDraw.Draw(img)
@@ -165,7 +180,7 @@ class ReceiptRenderer:
         else:
             code = "手動確認"
 
-        draw.text((10, 15), code, fill=0)
+        draw.text((10, 15), code, fill=0, font=font)
 
         return img
 

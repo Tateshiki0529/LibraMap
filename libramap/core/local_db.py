@@ -75,6 +75,7 @@ class LocalBookDatabase:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
         self._init_schema()
+        self._insert_test_data_if_empty()
 
     def _init_schema(self) -> None:
         """データベーススキーマを初期化（テーブルが存在しない場合のみ作成）する。"""
@@ -93,6 +94,141 @@ class LocalBookDatabase:
                     notes       TEXT NOT NULL DEFAULT ''
                 )
             """)
+
+    def _insert_test_data_if_empty(self) -> None:
+        """データベースが空の場合に、動作検証用のテスト書籍データを投入する。"""
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM books").fetchone()
+            if row is not None and row[0] > 0:
+                return
+
+        # 有名な日本語書籍11冊（通常書籍、禁帯出、異なるNDCなど）
+        test_books = [
+            BookRecord(
+                isbn="9784820414131",
+                title="日本十進分類法新訂10版",
+                creator="日本図書館協会分類委員会",
+                publisher="日本図書館協会",
+                ndc="014.4",
+                shelf_code="A-01",
+                floor="1f",
+                is_restricted=True,
+                notes="参考図書（禁帯出）"
+            ),
+            BookRecord(
+                isbn="9784003310212",
+                title="学問のすすめ",
+                creator="福沢諭吉",
+                publisher="岩波書店",
+                ndc="150",
+                shelf_code="A-01",
+                floor="1f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784003115015",
+                title="君たちはどう生きるか",
+                creator="吉野源三郎",
+                publisher="岩波書店",
+                ndc="159",
+                shelf_code="A-01",
+                floor="1f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784000801317",
+                title="広辞苑 第七版",
+                creator="新村出",
+                publisher="岩波書店",
+                ndc="813.1",
+                shelf_code="B-01",
+                floor="2f",
+                is_restricted=True,
+                notes="参考図書（禁帯出）"
+            ),
+            BookRecord(
+                isbn="9784101010113",
+                title="吾輩は猫である",
+                creator="夏目漱石",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784101010120",
+                title="坊っちゃん",
+                creator="夏目漱石",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=True,
+                notes="テスト用禁帯出設定"
+            ),
+            BookRecord(
+                isbn="9784101010137",
+                title="こころ",
+                creator="夏目漱石",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784101010151",
+                title="人間失格",
+                creator="太宰治",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784101010168",
+                title="走れメロス",
+                creator="太宰治",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784101024011",
+                title="羅生門・鼻",
+                creator="芥川龍之介",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            ),
+            BookRecord(
+                isbn="9784101092058",
+                title="銀河鉄道の夜",
+                creator="宮沢賢治",
+                publisher="新潮社",
+                ndc="913.6",
+                shelf_code="B-12",
+                floor="2f",
+                is_restricted=False,
+                notes="名著"
+            )
+        ]
+
+        for book in test_books:
+            self.upsert(book)
 
     def _connect(self) -> sqlite3.Connection:
         """
