@@ -5,7 +5,8 @@ ESC/POS 印刷モジュール。
 
 python-escpos ライブラリを使用して 58mm 感熱レシートプリンタへ印刷する。
 画像ラスタ印刷方式（specs.md §13.3）を採用する。
-Windows の共有プリンタ（\\localhost\RECEIPT など）へのファイル接続もサポートする。
+Windows の共有プリンタ（\\localhost\RECEIPT など）へのファイル接続において、
+書き込みバッファによる印刷遅延を解消するため、印刷の都度オープン・クローズ制御を行います。
 
 仕様参照: specs.md §13
 """
@@ -32,8 +33,8 @@ class EscPosPrinter:
     python-escpos を使用して USB/シリアル/ファイル(共有プリンタ)接続の感熱レシートプリンタへ印刷する。
     画像ラスタ印刷方式を採用し、Pillow で生成した画像をそのまま送信する。
 
-    デバッグ支援のため、実機印刷の成否にかかわらず、
-    印刷された画像は常に `data/receipts/` ディレクトリへ保存される。
+    共有プリンタ（ファイル接続）での書き込みバッファリングによる印刷遅延を防ぐため、
+    印刷要求の都度、ファイルを接続・切断（オープン・クローズ）する設計としています。
     """
 
     def __init__(self) -> None:
@@ -41,6 +42,7 @@ class EscPosPrinter:
         self._printer = None
         self._mode = "unconnected"
         self._connection_info = ""
+        self._file_path = None
 
     def connect(
         self,
@@ -65,13 +67,16 @@ class EscPosPrinter:
         if file_path:
             try:
                 from escpos.printer import File  # type: ignore[import]
-                # Windows 共有プリンタへの書き込み
-                self._printer = File(file_path)
+                # 接続テストのため一時的にオープンして即座にクローズ
+                test_printer = File(file_path)
+                test_printer.close()
+                
                 self._mode = "file"
+                self._file_path = file_path
                 self._connection_info = f"共有プリンタ ({file_path})"
                 return
             except Exception as exc:
-                print(f"共有プリンタへの接続に失敗しました: {exc}。USB接続を試みます。")
+                print(f"共有プリンタへの接続テストに失敗しました: {exc}。USB接続を試みます。")
 
         # 2. USB 接続の試行
         try:
@@ -94,10 +99,10 @@ class EscPosPrinter:
                 self._printer.close()
             except Exception:
                 pass
-            finally:
-                self._printer = None
-                self._mode = "unconnected"
-                self._connection_info = ""
+        self._printer = None
+        self._mode = "unconnected"
+        self._connection_info = ""
+        self._file_path = None
 
     def print_image(self, image: Image.Image) -> Path:
         """
@@ -125,13 +130,32 @@ class EscPosPrinter:
         except Exception as exc:
             print(f"レシート画像の保存に失敗しました: {exc}")
 
-        # 実機接続されている場合は印刷を実行
-        if self._printer is not None:
+        # 1. 共有プリンタ（ファイル接続）モードの場合:
+        # 書き込みバッファ遅延を確実に解消するため、印刷の都度オープン・クローズする
+        if self._mode == "file" and self._file_path:
+            try:
+                from escpos.printer import File  # type: ignore[import]
+                printer_instance = File(self._file_path)
+                printer_instance.image(image)
+                printer_instance.cut()
+                printer_instance.close()
+            except Exception as exc:
+                raise PrinterError(f"共有プリンタへの印刷中にエラーが発生しました: {exc}") from exc
+
+        # 2. USB 接続モードの場合:
+        # USBの再初期化オーバーヘッドを防ぐため、オープンした状態を維持して印刷
+        elif self._mode == "usb" and self._printer is not None:
             try:
                 self._printer.image(image)
                 self._printer.cut()
+                # バッファフラッシュを試みる
+                if hasattr(self._printer, "device") and hasattr(self._printer.device, "flush"):
+                    try:
+                        self._printer.device.flush()
+                    except Exception:
+                        pass
             except Exception as exc:
-                raise PrinterError(f"印刷中にエラーが発生しました: {exc}") from exc
+                raise PrinterError(f"USBプリンタへの印刷中にエラーが発生しました: {exc}") from exc
 
         return save_path
 
