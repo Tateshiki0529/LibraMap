@@ -442,13 +442,14 @@ class MainWindow(QMainWindow):
             # 6. フロアマップ簡易イラストの描画と表示
             if is_restricted:
                 # 禁帯出の場合：2階の禁帯出エリア全体をハイライト
-                map_img = self._floor_map_renderer.render("2f", highlight_restricted=True)
+                map_img = self._floor_map_renderer.render("2f", highlight_restricted=True, monochrome=False)
             elif placement.found and placement.segment:
                 # 通常配架：該当する書架とセルをハイライト
                 map_img = self._floor_map_renderer.render(
                     placement.segment.floor_id,
                     highlight_shelf_id=placement.segment.shelf_id,
-                    highlight_segment=placement.segment
+                    highlight_segment=placement.segment,
+                    monochrome=False
                 )
             else:
                 map_img = None
