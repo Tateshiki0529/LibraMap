@@ -7,6 +7,7 @@ python-escpos ライブラリを使用して 58mm 感熱レシートプリンタ
 画像ラスタ印刷方式（specs.md §13.3）を採用する。
 Windows の共有プリンタ（\\localhost\RECEIPT など）へのファイル接続において、
 書き込みバッファによる印刷遅延を解消するため、印刷の都度オープン・クローズ制御を行います。
+また、レシート画像は指示された場合、またはシミュレーションモードの時のみローカルに保存します。
 
 仕様参照: specs.md §13
 """
@@ -49,10 +50,12 @@ class EscPosPrinter:
         vendor_id: int = 0x04b8,
         product_id: int = 0x0202,
         file_path: str | None = None,
+        dummy: bool = False,
     ) -> None:
         """
         プリンタへ接続する。
 
+        引数 `dummy=True` の場合はシミュレーションモードとして動作する。
         引数 `file_path` が指定された場合は Windows 共有プリンタ（例: \\\\localhost\\RECEIPT）
         などのファイル出力による接続を試みる。
         指定がない場合は USB 接続を試みる。
@@ -62,7 +65,16 @@ class EscPosPrinter:
             vendor_id: USB ベンダー ID
             product_id: USB プロダクト ID
             file_path: 共有プリンタのファイルパス（Windows名）
+            dummy: シミュレーションモードを強制する場合 True
         """
+        self.disconnect()
+
+        # 0. 明示的なシミュレーションモードの指定
+        if dummy:
+            self._mode = "dummy"
+            self._connection_info = "シミュレーションモード"
+            return
+
         # 1. 共有プリンタ（ファイル接続）の試行
         if file_path:
             try:
@@ -81,15 +93,20 @@ class EscPosPrinter:
         # 2. USB 接続の試行
         try:
             from escpos.printer import Usb  # type: ignore[import]
-            self._printer = Usb(vendor_id, product_id)
+            usb_printer = Usb(vendor_id, product_id)
+            # 実際に接続（オープン）できるかテストし、例外を即時検知する
+            usb_printer.open()
+            usb_printer.close()
+
+            self._printer = usb_printer
             self._mode = "usb"
             self._connection_info = f"USB プリンタ (ID: {hex(vendor_id)}:{hex(product_id)})"
             return
         except Exception as exc:
-            # 接続失敗時はダミーモード（画像保存のみ）へフォールバック
+            # 接続失敗（pyusbライブラリの欠如や未接続）時はダミーモードへフォールバック
             self._printer = None
             self._mode = "dummy"
-            self._connection_info = "シミュレーションモード（画像保存のみ）"
+            self._connection_info = "シミュレーションモード"
             print(f"実機プリンタが見つかりません。シミュレーションモードで動作します: {exc}")
 
     def disconnect(self) -> None:
@@ -104,33 +121,37 @@ class EscPosPrinter:
         self._connection_info = ""
         self._file_path = None
 
-    def print_image(self, image: Image.Image) -> Path:
+    def print_image(self, image: Image.Image, save_image: bool = False) -> Path | None:
         """
         Pillow 画像をプリンタへ送信して印刷する。
-        また、デバッグおよび記録用として `data/receipts/` フォルダへPNG画像として保存する。
+        引数 `save_image=True` またはシミュレーションモードの場合に、
+        `data/receipts/` フォルダへPNG画像として保存します。
 
         Args:
             image: 印刷する Pillow 画像オブジェクト
+            save_image: 画像ファイルをローカル保存する場合 True
 
         Returns:
-            Path: 保存されたレシート画像のパス
+            Path | None: 保存されたレシート画像のパス。保存されなかった場合は None。
 
         Raises:
             PrinterError: 印刷処理中にエラーが発生した場合
         """
-        # 保存先ディレクトリの準備
-        save_dir = Path("data") / "receipts"
-        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = None
         
-        # タイムスタンプ付きファイル名で保存
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        save_path = save_dir / f"receipt_{timestamp}.png"
-        try:
-            image.save(save_path, format="PNG")
-        except Exception as exc:
-            print(f"レシート画像の保存に失敗しました: {exc}")
+        # 1. 保存指示があるか、シミュレーションモードの場合のみ画像としてローカル保存する
+        if save_image or self._mode == "dummy":
+            save_dir = Path("data") / "receipts"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            save_path = save_dir / f"receipt_{timestamp}.png"
+            try:
+                image.save(save_path, format="PNG")
+            except Exception as exc:
+                print(f"レシート画像の保存に失敗しました: {exc}")
 
-        # 1. 共有プリンタ（ファイル接続）モードの場合:
+        # 2. 共有プリンタ（ファイル接続）モードの場合:
         # 書き込みバッファ遅延を確実に解消するため、印刷の都度オープン・クローズする
         if self._mode == "file" and self._file_path:
             try:
@@ -142,7 +163,7 @@ class EscPosPrinter:
             except Exception as exc:
                 raise PrinterError(f"共有プリンタへの印刷中にエラーが発生しました: {exc}") from exc
 
-        # 2. USB 接続モードの場合:
+        # 3. USB 接続モードの場合:
         # USBの再初期化オーバーヘッドを防ぐため、オープンした状態を維持して印刷
         elif self._mode == "usb" and self._printer is not None:
             try:
@@ -159,22 +180,23 @@ class EscPosPrinter:
 
         return save_path
 
-    def print_image_from_file(self, image_path: Path) -> Path:
+    def print_image_from_file(self, image_path: Path, save_image: bool = False) -> Path | None:
         """
         画像ファイルを読み込んでプリンタへ送信する。
 
         Args:
             image_path: 印刷する画像ファイルのパス
+            save_image: 画像ファイルを複製保存する場合 True
 
         Returns:
-            Path: 保存されたレシート画像のパス
+            Path | None: 保存されたレシート画像のパス
         """
         try:
             image = Image.open(image_path)
         except OSError as exc:
             raise PrinterError(f"画像ファイル読み込みエラー: {exc}") from exc
 
-        return self.print_image(image)
+        return self.print_image(image, save_image=save_image)
 
     def is_connected(self) -> bool:
         """プリンタが接続済み（またはシミュレーション動作中）かどうかを返す。"""
@@ -184,4 +206,10 @@ class EscPosPrinter:
         """現在のプリンタ接続状態を表すメッセージを返す。"""
         if self._mode == "unconnected":
             return "プリンタ未接続"
+        elif self._mode == "dummy":
+            return "シミュレーションモード"
         return f"接続中: {self._connection_info}"
+
+    def get_mode(self) -> str:
+        """現在のプリンタ接続モードを返す ("file", "usb", "dummy", "unconnected")。"""
+        return self._mode

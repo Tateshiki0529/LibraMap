@@ -39,12 +39,11 @@ def main() -> None:
     cache_path = project_root / "data" / "cache.db"
     schema_path = base_dir / "data" / "schema.json"
 
-    # 2. 各制御モジュールの初期化
+    # 2. 各制御モジュールの初期化 (DB, キャッシュ, API, バーコード)
     local_db = LocalBookDatabase(db_path=db_path)
     cache_manager = CacheManager(cache_path=cache_path)
     ndl_api = NdlSearchApi()
     barcode_processor = BarcodeProcessor()
-    receipt_renderer = ReceiptRenderer()
 
     # 3. プリンタ初期化と接続 (共有プリンタ "\\localhost\RECEIPT" を指定)
     printer = EscPosPrinter()
@@ -58,9 +57,11 @@ def main() -> None:
         print(f"書架スキーマデータのロードに失敗しました (フォールバックデータを使用します): {exc}")
         floor_data = {"floors": []}
 
+    # 5. レンダラー・判定エンジンの初期化 (floor_dataを依存注入)
+    receipt_renderer = ReceiptRenderer(floor_data=floor_data)
     placement_engine = PlacementEngine(floor_data=floor_data)
 
-    # 5. UIの構築と依存関係の注入
+    # 6. UIの構築と依存関係の注入
     window = MainWindow(
         barcode_processor=barcode_processor,
         local_db=local_db,

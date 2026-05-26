@@ -4,9 +4,10 @@ libramap.ui.main_window
 メインウィンドウモジュール。
 
 PySide6 を使用した返却支援 GUI のメイン画面を提供する。
-バーコードスキャナからの入力を受け取り、
+バーコードスキャナからの入力をトリガーとして、
 蔵書DB照合、NDL API 検索、配架判定、レシート印刷までの一連のフローを制御する。
-モダンなダークモード風デザイン（高コントラスト・大型文字）を採用。
+また、GUI上に簡易なフロアマップ（平面イラスト）を表示し、返却場所を視覚的に強調します。
+プリンタの動的接続先選択機能、および未登録時のみレシート画像を保存する仕様変更に対応。
 
 仕様参照: specs.md §16, §20.0.5
 """
@@ -14,8 +15,9 @@ from __future__ import annotations
 
 from enum import Enum, auto
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QKeyEvent
+from PySide6.QtGui import QFont, QKeyEvent, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -27,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from libramap.core.barcode import BarcodeType
-from libramap.printing.receipt_renderer import ReceiptData
+from libramap.printing.receipt_renderer import ReceiptData, FloorMapRenderer
 
 # UIの状態定義
 class UIState(Enum):
@@ -40,7 +42,7 @@ class MainWindow(QMainWindow):
     LibraMap メインウィンドウ。
 
     バーコードスキャナからの入力をトリガーとして、
-    返却書籍の配架場所特定およびレシート出力を一括で処理する。
+    返却書籍の配架場所特定、フロアマップハイライト表示、レシート出力を一括処理する。
     """
 
     # モダンなQSSスタイルシート定義
@@ -66,6 +68,25 @@ class MainWindow(QMainWindow):
     }
     QLineEdit:focus {
         border: 2px solid #38bdf8;
+    }
+    QComboBox {
+        background-color: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 6px;
+        color: #f8fafc;
+        padding: 8px 12px;
+        font-size: 14px;
+        font-family: "Segoe UI", "Meiryo", sans-serif;
+    }
+    QComboBox:hover {
+        border: 1px solid #38bdf8;
+    }
+    QComboBox QAbstractItemView {
+        background-color: #1e293b;
+        border: 1px solid #475569;
+        selection-background-color: #38bdf8;
+        selection-color: #0f172a;
+        color: #f8fafc;
     }
     QPushButton {
         background-color: #334155;
@@ -121,7 +142,7 @@ class MainWindow(QMainWindow):
         """
         super().__init__()
         self.setWindowTitle("LibraMap - 図書館返却支援システム")
-        self.setMinimumSize(850, 650)
+        self.setMinimumSize(950, 700)
 
         # 依存モジュールの格納
         self._barcode_processor = barcode_processor
@@ -132,6 +153,9 @@ class MainWindow(QMainWindow):
         self._receipt_renderer = receipt_renderer
         self._printer = printer
         self._floor_data = floor_data
+
+        # マップ描画エンジンの初期化
+        self._floor_map_renderer = FloorMapRenderer(floor_data)
 
         # 状態初期化
         self._state = UIState.WAITING_SCAN
@@ -155,10 +179,30 @@ class MainWindow(QMainWindow):
 
         # ---- ヘッダーエリア ----
         header_layout = QHBoxLayout()
+        header_layout.setSpacing(15)
         
         title_label = QLabel("LibraMap 返却支援")
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #38bdf8;")
+        
+        # プリンタ接続先選択コンボボックス
+        self._printer_selector = QComboBox()
+        self._printer_selector.addItems([
+            "共有プリンタ (\\\\localhost\\RECEIPT)",
+            "USBプリンタ (EPSON等)",
+            "シミュレーション (画像保存のみ)"
+        ])
+        
+        # 初期インデックスの同期
+        current_mode = self._printer.get_mode()
+        if current_mode == "file":
+            self._printer_selector.setCurrentIndex(0)
+        elif current_mode == "usb":
+            self._printer_selector.setCurrentIndex(1)
+        else:
+            self._printer_selector.setCurrentIndex(2)
+
+        self._printer_selector.currentIndexChanged.connect(self._on_printer_selection_changed)
         
         self._printer_status_label = QLabel(self._printer.get_status_message())
         self._printer_status_label.setFont(QFont("Segoe UI", 12))
@@ -167,6 +211,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addWidget(title_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(self._printer_selector)
         header_layout.addWidget(self._printer_status_label)
         main_layout.addLayout(header_layout)
 
@@ -187,25 +232,43 @@ class MainWindow(QMainWindow):
         input_container.addWidget(self._scan_input)
         main_layout.addLayout(input_container)
 
-        # ---- 結果表示エリア（大型フレーム） ----
+        # ---- 結果表示エリア（大型フレーム、左右2分割） ----
         self._result_frame = QFrame()
         self._result_frame.setStyleSheet(self.FRAME_STYLE_NORMAL)
-        self._result_frame.setMinimumHeight(320)
+        self._result_frame.setMinimumHeight(380)
         
         frame_layout = QVBoxLayout(self._result_frame)
-        frame_layout.setContentsMargins(25, 25, 25, 25)
+        frame_layout.setContentsMargins(25, 20, 25, 20)
 
         self._result_title_label = QLabel("待機中")
         self._result_title_label.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         self._result_title_label.setStyleSheet("color: #94a3b8;")
+        frame_layout.addWidget(self._result_title_label)
+
+        # 左右並列コンテンツレイアウト
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(25)
+
+        # 左側：テキスト情報
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(10)
         
         self._result_detail_label = QLabel("書籍のバーコードスキャンをお待ちしています。")
-        self._result_detail_label.setFont(QFont("Segoe UI", 26, QFont.Weight.Bold))
-        self._result_detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._result_detail_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        self._result_detail_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._result_detail_label.setWordWrap(True)
+        text_layout.addWidget(self._result_detail_label, 1)
+        
+        content_layout.addLayout(text_layout, 1)
 
-        frame_layout.addWidget(self._result_title_label)
-        frame_layout.addWidget(self._result_detail_label, 1)
+        # 右側：フロアマップ簡易イラスト表示用ラベル
+        self._map_image_label = QLabel()
+        self._map_image_label.setFixedSize(480, 240)  # アスペクト比 2:1
+        self._map_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._map_image_label.setStyleSheet("background-color: #0b0f19; border: 1px solid #334155; border-radius: 8px;")
+        content_layout.addWidget(self._map_image_label)
+
+        frame_layout.addLayout(content_layout)
         main_layout.addWidget(self._result_frame)
 
         # ---- 下部ボタンエリア ----
@@ -218,6 +281,29 @@ class MainWindow(QMainWindow):
         
         button_layout.addWidget(self._clear_btn)
         main_layout.addLayout(button_layout)
+
+    @Slot(int)
+    def _on_printer_selection_changed(self, index: int) -> None:
+        """プリンタの接続方式が選択切り替えられた時の処理。"""
+        self._scan_input.setEnabled(False)
+        self._printer_status_label.setText("再接続中...")
+        
+        try:
+            if index == 0:
+                # 共有プリンタ (file)
+                self._printer.connect(file_path=r"\\localhost\RECEIPT")
+            elif index == 1:
+                # USBプリンタ
+                self._printer.connect(vendor_id=0x04b8, product_id=0x0202)
+            else:
+                # シミュレーション (dummy)
+                self._printer.connect(dummy=True)
+        except Exception as exc:
+            print(f"プリンタ切り替え失敗: {exc}")
+
+        self._printer_status_label.setText(self._printer.get_status_message())
+        self._scan_input.setEnabled(True)
+        self._scan_input.setFocus()
 
     @Slot()
     def _on_scan_submitted(self) -> None:
@@ -277,7 +363,7 @@ class MainWindow(QMainWindow):
                     f"【対象外資料：要手動確認】"
                 )
                 
-                # 対象外資料としてのレシート出力
+                # 未登録（対象外）書籍のレシート作成
                 from libramap.core.placement_engine import PlacementResult
                 dummy_placement = PlacementResult(found=False, message="館内蔵書未登録（対象外）")
                 receipt_data = ReceiptData(
@@ -289,7 +375,16 @@ class MainWindow(QMainWindow):
                     shelf_rows=5,
                     shelf_cols=8,
                 )
-                self._printer.print_image(self._receipt_renderer.render(receipt_data))
+                
+                # 未登録時のみ画像保存（save_image=True）
+                save_path = self._printer.print_image(self._receipt_renderer.render(receipt_data), save_image=True)
+                
+                save_info = f"\nレシート画像保存：{save_path.name}" if save_path else ""
+                self._result_detail_label.setText(
+                    f"館内蔵書データベースに登録されていません。\n"
+                    f"ISBN: {isbn}\n"
+                    f"【対象外資料：要手動確認】{save_info}"
+                )
                 return
 
             # 2. 書誌情報の補完（DB優先、空ならキャッシュ、APIから取得）
@@ -319,7 +414,7 @@ class MainWindow(QMainWindow):
                             ndc=ndl_info.ndc,
                         )
                     except Exception as e:
-                        print(f"NDL Search API 取得失敗 (ローカル情報優先): {e}")
+                        print(f"NDL Search API 取得失敗: {e}")
 
             # 3. 配架位置判定
             is_restricted = record.is_restricted
@@ -330,7 +425,7 @@ class MainWindow(QMainWindow):
             if placement.found and placement.segment:
                 rows, cols = self._get_shelf_size(placement.segment.shelf_id)
 
-            # 5. レシート描画と印刷
+            # 5. レシート描画と印刷 (配架成功時は画像保存をスキップ: save_image=False)
             receipt_data = ReceiptData(
                 title=title or record.title or "書名不明の蔵書",
                 creator=creator or record.creator or "",
@@ -342,17 +437,37 @@ class MainWindow(QMainWindow):
             )
             
             rendered_image = self._receipt_renderer.render(receipt_data)
-            save_path = self._printer.print_image(rendered_image)
+            save_path = self._printer.print_image(rendered_image, save_image=False)
 
-            # 6. 画面表示の更新
+            # 6. フロアマップ簡易イラストの描画と表示
+            if is_restricted:
+                # 禁帯出の場合：2階の禁帯出エリア全体をハイライト
+                map_img = self._floor_map_renderer.render("2f", highlight_restricted=True)
+            elif placement.found and placement.segment:
+                # 通常配架：該当する書架とセルをハイライト
+                map_img = self._floor_map_renderer.render(
+                    placement.segment.floor_id,
+                    highlight_shelf_id=placement.segment.shelf_id,
+                    highlight_segment=placement.segment
+                )
+            else:
+                map_img = None
+
+            if map_img:
+                self._display_map(map_img)
+            else:
+                self._map_image_label.clear()
+
+            # 7. 画面表示の更新
             self._printer_status_label.setText(self._printer.get_status_message())
             
-            # メッセージ構築
+            # 画像保存された場合（シミュレーション時など）のみ保存パスを表示
+            save_info = f"\nレシート保存：{save_path.name}" if save_path else "\nレシート出力完了 (印刷)"
+            
             msg = (
                 f"【{receipt_data.title}】\n\n"
                 f"配架先：{placement.message}\n"
-                f"分類番号：{receipt_data.ndc}\n"
-                f"レシート保存：{save_path.name}"
+                f"分類番号：{receipt_data.ndc}{save_info}"
             )
             
             if is_restricted:
@@ -362,6 +477,25 @@ class MainWindow(QMainWindow):
 
         except Exception as exc:
             self._show_error_message(f"配架処理エラー:\n{exc}")
+
+    def _display_map(self, pil_image: Image.Image) -> None:
+        """Pillow画像をQPixmapに変換して画面上にリサイズ表示する。"""
+        try:
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+            
+            data = pil_image.tobytes("raw", "RGB")
+            qimage = QImage(data, pil_image.size[0], pil_image.size[1], QImage.Format.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimage)
+            
+            scaled_pixmap = pixmap.scaled(
+                self._map_image_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self._map_image_label.setPixmap(scaled_pixmap)
+        except Exception as e:
+            print(f"マップ描画変換エラー: {e}")
 
     def _get_shelf_size(self, shelf_id: str) -> tuple[int, int]:
         """フロアデータから書架オブジェクトを探し、段数と列数を返す。"""
@@ -391,6 +525,7 @@ class MainWindow(QMainWindow):
         self._result_title_label.setText("❌ 判定エラー")
         self._result_title_label.setStyleSheet("color: #f87171;")
         self._result_detail_label.setText(f"{message}\n\n要手動確認")
+        self._map_image_label.clear()
 
     def _show_pending_message(self, message: str) -> None:
         """追加スキャン入力待ち時の表示（インディゴ基調）。"""
@@ -398,6 +533,7 @@ class MainWindow(QMainWindow):
         self._result_title_label.setText("⏳ 追加スキャン待ち")
         self._result_title_label.setStyleSheet("color: #818cf8;")
         self._result_detail_label.setText(message)
+        self._map_image_label.clear()
 
     @Slot()
     def _on_clear(self) -> None:
@@ -410,6 +546,7 @@ class MainWindow(QMainWindow):
         self._result_title_label.setText("待機中")
         self._result_title_label.setStyleSheet("color: #94a3b8;")
         self._result_detail_label.setText("書籍のバーコードスキャンをお待ちしています。")
+        self._map_image_label.clear()
         self._scan_input.setFocus()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
