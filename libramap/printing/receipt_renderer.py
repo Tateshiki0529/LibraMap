@@ -266,13 +266,13 @@ class ReceiptRenderer:
                 rect = [x1, y1, x2, y2]
 
                 if is_target_cell:
-                    # 対象セル：白黒2値の斜線ハッチング
-                    self._floor_map_renderer.draw_hatching_on_image(img, rect, interval=6, color=(0, 0, 0))
-                    # ハッチングされたセルの外枠を太めの黒線で描く
-                    draw.rectangle(rect, outline=(0, 0, 0), width=2)
+                    # 対象セル：白黒2値の斜線ハッチング（太さ2、間隔8）
+                    self._floor_map_renderer.draw_hatching_on_image(img, rect, interval=8, color=(0, 0, 0), line_width=2)
+                    # ハッチングされたセルの外枠を太めの黒線（太さ3）で描く
+                    draw.rectangle(rect, outline=(0, 0, 0), width=3)
                 else:
-                    # 通常セル：白背景に細い黒枠のみ
-                    draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=1)
+                    # 通常セル：白背景に黒枠（太さ2）
+                    draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=2)
 
         # モノクロ（L）モードに変換して返す
         return img.convert("L")
@@ -328,7 +328,8 @@ class FloorMapRenderer:
         img: Image.Image,
         rect: list[float] | tuple[float, float, float, float],
         interval: int = 10,
-        color: tuple[int, int, int] = (0, 0, 0)
+        color: tuple[int, int, int] = (0, 0, 0),
+        line_width: int = 1
     ) -> None:
         """
         指定した長方形の範囲内からはみ出さずに、斜線ハッチングを描画するヘルパー。
@@ -343,13 +344,13 @@ class FloorMapRenderer:
         mask = Image.new("L", (w, h), 0)
         mask_draw = ImageDraw.Draw(mask)
         for offset in range(-h, w, interval):
-            mask_draw.line([(offset, 0), (offset + h, h)], fill=255, width=1)
+            mask_draw.line([(offset, 0), (offset + h, h)], fill=255, width=line_width)
         
         # 斜線を描いたカラーのテンポラリ画像
         temp_img = Image.new("RGB", (w, h), (255, 255, 255))
         temp_draw = ImageDraw.Draw(temp_img)
         for offset in range(-h, w, interval):
-            temp_draw.line([(offset, 0), (offset + h, h)], fill=color, width=1)
+            temp_draw.line([(offset, 0), (offset + h, h)], fill=color, width=line_width)
         
         # マスクを適用してペースト
         img.paste(temp_img, (x1, y1), mask=mask)
@@ -406,36 +407,41 @@ class FloorMapRenderer:
             rect = [x, y, x + w, y + h]
 
             if obj_type == "wall":
-                # 壁: 太い黒線
-                draw.rectangle(rect, fill=(15, 23, 42))
+                # 壁: 太い黒線（モノクロ時は完全な黒）
+                fill_color = (0, 0, 0) if monochrome else (15, 23, 42)
+                draw.rectangle(rect, fill=fill_color)
 
             elif obj_type == "desk":
-                # カウンター: 白または薄い灰色 ＋ 黒枠
+                # カウンター: 白または薄い灰色 ＋ 黒枠（モノクロ時は太さ2）
                 fill = (255, 255, 255) if monochrome else (241, 245, 249)
-                draw.rectangle(rect, fill=fill, outline=(0, 0, 0), width=1)
+                width_border = 2 if monochrome else 1
+                draw.rectangle(rect, fill=fill, outline=(0, 0, 0), width=width_border)
 
             elif obj_type == "return_box":
-                # 返却BOX
+                # 返却BOX（モノクロ時は太さ2）
                 fill = (255, 255, 255) if monochrome else (241, 245, 249)
-                draw.rectangle(rect, fill=fill, outline=(0, 0, 0), width=1)
+                width_border = 2 if monochrome else 1
+                draw.rectangle(rect, fill=fill, outline=(0, 0, 0), width=width_border)
 
             elif obj_type == "stairs":
-                # 階段: 斜線ハッチング
-                draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=1)
+                # 階段: 斜線ハッチング（モノクロ時は太さ2）
+                width_border = 2 if monochrome else 1
+                draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=width_border)
                 
-                # 階段用の斜線をハッチングヘルパーで描画
+                # 階段用の斜線をハッチングヘルパーで描画（モノクロ時は太さ2）
                 color_line = (148, 163, 184) if not monochrome else (0, 0, 0)
-                self.draw_hatching_on_image(img, rect, interval=15, color=color_line)
+                line_w = 1 if not monochrome else 2
+                self.draw_hatching_on_image(img, rect, interval=15, color=color_line, line_width=line_w)
 
             elif obj_type == "restricted":
                 # 禁帯出エリア
                 if monochrome:
-                    # モノクロ印刷用：
-                    draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=1)
+                    # モノクロ印刷用：枠線太さ2
+                    draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=2)
                     if highlight_restricted:
-                        # 禁帯出判定時：黒の斜線ハッチングで強調（文字保護のため塗りつぶしはしない）
-                        self.draw_hatching_on_image(img, rect, interval=10, color=(0, 0, 0))
-                        draw.rectangle(rect, outline=(0, 0, 0), width=2)
+                        # 禁帯出判定時：黒の斜線ハッチングで強調（太さ2、間隔12）
+                        self.draw_hatching_on_image(img, rect, interval=12, color=(0, 0, 0), line_width=2)
+                        draw.rectangle(rect, outline=(0, 0, 0), width=3)
                 else:
                     # カラー画面用：
                     if highlight_restricted:
@@ -456,10 +462,9 @@ class FloorMapRenderer:
 
                 if is_target_shelf and highlight_segment:
                     if monochrome:
-                        # モノクロ印刷用：
-                        # 対象書架全体を斜線ハッチングで覆う（文字が上書きされても読めるように）
-                        draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=2)
-                        self.draw_hatching_on_image(img, rect, interval=10, color=(0, 0, 0))
+                        # モノクロ印刷用：対象書架全体を斜線ハッチングで覆う（太さ2、間隔12）
+                        draw.rectangle(rect, fill=(255, 255, 255), outline=(0, 0, 0), width=3)
+                        self.draw_hatching_on_image(img, rect, interval=12, color=(0, 0, 0), line_width=2)
                     else:
                         # カラー画面用：対象セルの赤色ハイライト
                         draw.rectangle(rect, fill=(255, 255, 255), outline=(59, 130, 246), width=3)
@@ -491,7 +496,8 @@ class FloorMapRenderer:
                     # 通常書架:
                     fill = (255, 255, 255) if monochrome else (226, 232, 240)
                     outline_color = (0, 0, 0) if monochrome else (148, 163, 184)
-                    draw.rectangle(rect, fill=fill, outline=outline_color, width=1)
+                    width_border = 2 if monochrome else 1
+                    draw.rectangle(rect, fill=fill, outline=outline_color, width=width_border)
 
         # 2. テキストおよびラベルを上に重ねて描画（ハッチングで文字が消えないように最後に描画）
         for obj in floor.get("objects", []):
