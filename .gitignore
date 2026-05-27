@@ -1,45 +1,14 @@
-# Python
+.venv/
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-*.pyd
-
-# 仮想環境
-.venv/
-venv/
-env/
-
-# 配布・ビルド
-dist/
-build/
-*.egg-info/
-*.egg
-
-# テスト・カバレッジ
 .pytest_cache/
-.coverage
-htmlcov/
+.mypy_cache/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+data/*.db
+data/receipts/
+data/maps/
 
-# OS
+*.log
+.env
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# ローカルデータ（本番DBはリポジトリに含めない）
-*.db
-*.sqlite
-*.sqlite3
-data/
-
-# ログ
-*.log
-
-# 設定ファイル（シークレット情報を含む可能性があるため）
-local_config.json

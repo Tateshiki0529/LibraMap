@@ -1,77 +1,46 @@
 # LibraMap
 
-図書館返却支援システム
+図書館の返却業務を支援するデスクトップアプリです。ISBN-13または192系JANを入力し、館内蔵書DB、NDL Search API、書架マップ定義を使って、おおよその返却位置と58mmレシート画像を提示します。
 
-## プロジェクト概要
+## MVP機能
 
-返却された資料のバーコード（ISBN-13 / JANコード）をスキャンし、
-NDL Search API および館内蔵書データベースを照合することで、
-日本十進分類法（NDC）に基づく書架返却位置を視覚的に提示する司書支援システムです。
-
-本システムは「完全自動配架」を目的とせず、司書による最終判断を前提とした補助ツールです。
-
----
-
-## 関連プロジェクト構成
-
-| プロジェクト | 役割 |
-|---|---|
-| LibraMap（本体） | 配架支援メインアプリケーション |
-| LibraMap Editor | 書架マップ編集ツール |
-| LibraMap Builder | 蔵書DB生成・検証・デバッグ補助ツール |
-
----
-
-## 技術スタック
-
-| 用途 | 技術 |
-|---|---|
-| 実装言語 | Python |
-| GUI | PySide6 |
-| API取得 | requests |
-| XML解析 | lxml |
-| 画像描画 | Pillow |
-| 印刷 | python-escpos |
-| キャッシュDB | SQLite |
-| データ定義 | JSON |
-
----
+- ISBN-13 / 192系JANの判定
+- 館内蔵書SQLite DB照合
+- NDL Search OpenSearch APIによる補助書誌取得
+- NDC範囲による書架判定
+- PySide6 GUIでの返却先表示
+- Pillowによる58mmレシート画像生成
+- ESC/POSプリンタ接続、未接続時のシミュレーション保存
 
 ## セットアップ
 
-```bash
-# 仮想環境の作成
+```powershell
 python -m venv .venv
-
-# 仮想環境の有効化 (Windows)
-.venv\Scripts\activate
-
-# 依存ライブラリのインストール
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
----
+## 起動
 
-## 実行方法
-
-```bash
+```powershell
 python -m libramap.main
 ```
 
----
+初期状態ではプリンタはシミュレーションです。生成画像は `data/receipts/` に保存されます。
 
-## ブランチ構成
+## データ
 
-| ブランチ | 用途 |
-|---|---|
-| master | 安定版 |
-| develop | 開発統合 |
-| feature/* | 機能開発 |
-| fix/* | バグ修正 |
-| experimental/* | 実験実装 |
+- 書架定義: `libramap/data/schema.json`
+- 館内蔵書DB: `data/libramap.db`
+- NDLキャッシュ: `data/cache.db`
 
----
+`data/*.db` と `data/receipts/` は生成物としてGit管理対象外です。
 
-## ライセンス
+## Git運用
 
-本プロジェクトは実装指示書 (specs.md) に基づき開発されています。
+- `master`: 安定版
+- `develop`: 開発統合
+- `feature/*`: 機能開発
+- `fix/*`: 不具合修正
+
+変更はPull Requestで統合する前提です。

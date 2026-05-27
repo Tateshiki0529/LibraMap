@@ -1,11 +1,5 @@
-"""
-libramap.main
+from __future__ import annotations
 
-LibraMap アプリケーションのエントリーポイント。
-各モジュールの初期化と依存関係の注入を行い、メインUIを表示します。
-
-仕様参照: specs.md
-"""
 import json
 import sys
 from pathlib import Path
@@ -23,62 +17,36 @@ from libramap.ui.main_window import MainWindow
 
 
 def main() -> None:
-    """
-    アプリケーションのメインエントリーポイント。
-    """
     app = QApplication(sys.argv)
     app.setApplicationName("LibraMap")
     app.setApplicationVersion("0.1.0")
 
-    # 1. プロジェクト関連パスの定義
-    # リポジトリルートを基準にデータベース、キャッシュ、スキーマパスを決定
-    base_dir = Path(__file__).parent.resolve()
-    project_root = base_dir.parent.resolve()
-    
-    db_path = project_root / "data" / "libramap.db"
-    cache_path = project_root / "data" / "cache.db"
-    schema_path = base_dir / "data" / "schema.json"
+    project_root = Path(__file__).resolve().parents[1]
+    data_dir = project_root / "data"
+    schema_path = Path(__file__).resolve().parent / "data" / "schema.json"
 
-    # 2. 各制御モジュールの初期化 (DB, キャッシュ, API, バーコード)
-    local_db = LocalBookDatabase(db_path=db_path)
-    cache_manager = CacheManager(cache_path=cache_path)
-    ndl_api = NdlSearchApi()
-    barcode_processor = BarcodeProcessor()
+    floor_data = _load_floor_data(schema_path)
 
-    # 3. プリンタ初期化と接続 (共有プリンタ "\\localhost\RECEIPT" を指定)
     printer = EscPosPrinter()
-    printer.connect(file_path=r"\\localhost\RECEIPT")
+    printer.connect(dummy=True)
 
-    # 4. 書架定義JSONのロード
-    try:
-        with open(schema_path, "r", encoding="utf-8") as f:
-            floor_data = json.load(f)
-    except Exception as exc:
-        print(f"書架スキーマデータのロードに失敗しました (フォールバックデータを使用します): {exc}")
-        floor_data = {"floors": []}
-
-    # 5. レンダラー・判定エンジンの初期化 (floor_dataを依存注入)
-    receipt_renderer = ReceiptRenderer(floor_data=floor_data)
-    placement_engine = PlacementEngine(floor_data=floor_data)
-
-    # 6. UIの構築と依存関係の注入
     window = MainWindow(
-        barcode_processor=barcode_processor,
-        local_db=local_db,
-        ndl_api=ndl_api,
-        cache_manager=cache_manager,
-        placement_engine=placement_engine,
-        receipt_renderer=receipt_renderer,
+        barcode_processor=BarcodeProcessor(),
+        local_db=LocalBookDatabase(data_dir / "libramap.db"),
+        ndl_api=NdlSearchApi(),
+        cache_manager=CacheManager(data_dir / "cache.db"),
+        placement_engine=PlacementEngine(floor_data),
+        receipt_renderer=ReceiptRenderer(floor_data),
         printer=printer,
-        floor_data=floor_data
+        floor_data=floor_data,
     )
     window.show()
+    sys.exit(app.exec())
 
-    # アプリケーション正常終了時にプリンタを切断
-    try:
-        sys.exit(app.exec())
-    finally:
-        printer.disconnect()
+
+def _load_floor_data(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
 
 
 if __name__ == "__main__":
