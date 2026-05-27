@@ -6,6 +6,9 @@ from pathlib import Path
 from PIL import Image
 
 
+RECEIPT_PROFILE = "POS-5890"
+
+
 class PrinterError(Exception):
     pass
 
@@ -33,7 +36,7 @@ class EscPosPrinter:
             try:
                 from escpos.printer import File
 
-                test_printer = File(file_path)
+                test_printer = File(file_path, profile=RECEIPT_PROFILE)
                 test_printer.close()
                 self._mode = "file"
                 self._file_path = file_path
@@ -43,10 +46,14 @@ class EscPosPrinter:
                 self._set_dummy()
                 return
 
+        if not self._usb_backend_available():
+            self._set_dummy()
+            return
+
         try:
             from escpos.printer import Usb
 
-            printer = Usb(vendor_id, product_id)
+            printer = Usb(vendor_id, product_id, profile=RECEIPT_PROFILE)
             printer.open()
             printer.close()
             self._printer = printer
@@ -73,7 +80,7 @@ class EscPosPrinter:
             try:
                 from escpos.printer import File
 
-                printer = File(self._file_path)
+                printer = File(self._file_path, profile=RECEIPT_PROFILE)
                 printer.image(image)
                 printer.cut()
                 printer.close()
@@ -104,6 +111,15 @@ class EscPosPrinter:
     def _set_dummy(self) -> None:
         self._mode = "dummy"
         self._connection_info = "シミュレーション"
+
+    @staticmethod
+    def _usb_backend_available() -> bool:
+        try:
+            import usb.backend.libusb1
+            import usb.core
+        except Exception:
+            return False
+        return usb.backend.libusb1.get_backend() is not None
 
     @staticmethod
     def _save_image(image: Image.Image) -> Path:
