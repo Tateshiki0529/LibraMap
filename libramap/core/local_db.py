@@ -106,10 +106,19 @@ class LocalBookDatabase:
             self.upsert(record)
 
     def _ensure_required_samples(self) -> None:
-        required_isbns = {"9784947017377"}
+        self._delete_sample_typo()
+        required_isbns = {"9784847017377"}
         for record in self._sample_records():
             if record.isbn in required_isbns and self.find_by_isbn(record.isbn) is None:
                 self.upsert(record)
+
+    def _delete_sample_typo(self) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                "DELETE FROM books WHERE isbn = ? AND notes LIKE ?",
+                ("9784947017377", "T-11%"),
+            )
+            conn.commit()
 
     @staticmethod
     def _sample_records() -> list[BookRecord]:
@@ -153,7 +162,7 @@ class LocalBookDatabase:
                 floor="2f",
             ),
             BookRecord(
-                isbn="9784947017377",
+                isbn="9784847017377",
                 title="ホームレス中学生",
                 creator="田村裕",
                 publisher="ワニブックス",

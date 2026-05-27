@@ -17,6 +17,11 @@ class BarcodeProcessorTest(unittest.TestCase):
         self.assertEqual(result.barcode_type, BarcodeType.ISBN13)
         self.assertEqual(result.isbn, "9784101010113")
 
+    def test_t11_isbn13(self) -> None:
+        result = BarcodeProcessor().process("9784847017377")
+        self.assertEqual(result.barcode_type, BarcodeType.ISBN13)
+        self.assertEqual(result.isbn, "9784847017377")
+
     def test_unsupported_jan(self) -> None:
         result = BarcodeProcessor().process("4901234567894")
         self.assertEqual(result.barcode_type, BarcodeType.JAN_OTHER)
@@ -52,7 +57,7 @@ class LocalBookDatabaseTest(unittest.TestCase):
     def test_t11_sample_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db = LocalBookDatabase(Path(temp_dir) / "books.db")
-            found = db.find_by_isbn("9784947017377")
+            found = db.find_by_isbn("9784847017377")
             self.assertIsNotNone(found)
             self.assertEqual(found.title, "ホームレス中学生")
             self.assertEqual(found.ndc, "999.9")
