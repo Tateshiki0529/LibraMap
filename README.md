@@ -28,6 +28,14 @@ python -m libramap.main
 
 初期状態ではプリンタはシミュレーションです。生成画像は `data/receipts/` に保存されます。
 
+## Editor 起動
+
+```powershell
+python -m libramap_editor.main
+```
+
+書架マップJSONをGUIで編集する管理者向けツールです。
+
 ## データ
 
 - 書架定義: `libramap/data/schema.json`
