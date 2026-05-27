@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,12 +31,12 @@ class LocalBookDatabase:
         self._seed_if_empty()
 
     def find_by_isbn(self, isbn: str) -> BookRecord | None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             row = conn.execute("SELECT * FROM books WHERE isbn = ?", (isbn,)).fetchone()
         return self._row_to_record(row) if row else None
 
     def upsert(self, record: BookRecord) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO books (
@@ -67,6 +68,7 @@ class LocalBookDatabase:
                     record.notes,
                 ),
             )
+            conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -74,7 +76,7 @@ class LocalBookDatabase:
         return conn
 
     def _init_schema(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS books (
@@ -91,9 +93,10 @@ class LocalBookDatabase:
                 )
                 """
             )
+            conn.commit()
 
     def _seed_if_empty(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             count = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
         if count:
             return
@@ -142,7 +145,7 @@ class LocalBookDatabase:
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> BookRecord:
-        return BookRecord(
+        record = BookRecord(
             isbn=row["isbn"],
             title=row["title"],
             creator=row["creator"],
@@ -154,3 +157,4 @@ class LocalBookDatabase:
             is_active=bool(row["is_active"]),
             notes=row["notes"],
         )
+        return record
