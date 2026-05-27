@@ -99,9 +99,21 @@ class LocalBookDatabase:
         with closing(self._connect()) as conn:
             count = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
         if count:
+            self._ensure_required_samples()
             return
 
-        for record in [
+        for record in self._sample_records():
+            self.upsert(record)
+
+    def _ensure_required_samples(self) -> None:
+        required_isbns = {"9784947017377"}
+        for record in self._sample_records():
+            if record.isbn in required_isbns and self.find_by_isbn(record.isbn) is None:
+                self.upsert(record)
+
+    @staticmethod
+    def _sample_records() -> list[BookRecord]:
+        return [
             BookRecord(
                 isbn="9784820414131",
                 title="日本十進分類法 新訂10版",
@@ -140,8 +152,17 @@ class LocalBookDatabase:
                 shelf_code="B-12",
                 floor="2f",
             ),
-        ]:
-            self.upsert(record)
+            BookRecord(
+                isbn="9784947017377",
+                title="ホームレス中学生",
+                creator="田村裕",
+                publisher="ワニブックス",
+                ndc="999.9",
+                shelf_code="",
+                floor="",
+                notes="T-11 書架未定義NDC確認用。JAN: 1920076013003",
+            ),
+        ]
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> BookRecord:

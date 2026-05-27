@@ -49,6 +49,14 @@ class LocalBookDatabaseTest(unittest.TestCase):
             self.assertIsNotNone(found)
             self.assertEqual(found.title, "テスト")
 
+    def test_t11_sample_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = LocalBookDatabase(Path(temp_dir) / "books.db")
+            found = db.find_by_isbn("9784947017377")
+            self.assertIsNotNone(found)
+            self.assertEqual(found.title, "ホームレス中学生")
+            self.assertEqual(found.ndc, "999.9")
+
 
 class ReceiptRendererTest(unittest.TestCase):
     def test_render_receipt_image(self) -> None:

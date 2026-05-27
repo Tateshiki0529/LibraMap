@@ -38,20 +38,31 @@ class MainWindow(QMainWindow):
     }
     QLineEdit {
         background: #ffffff;
+        color: #111827;
         border: 2px solid #9ca3af;
         border-radius: 6px;
         padding: 12px 14px;
         font-size: 24px;
+    }
+    QLineEdit::placeholder {
+        color: #6b7280;
     }
     QLineEdit:focus {
         border-color: #2563eb;
     }
     QPushButton, QComboBox {
         background: #ffffff;
+        color: #111827;
         border: 1px solid #9ca3af;
         border-radius: 6px;
         padding: 10px 14px;
         font-size: 15px;
+    }
+    QComboBox QAbstractItemView {
+        background: #ffffff;
+        color: #111827;
+        selection-background-color: #dbeafe;
+        selection-color: #111827;
     }
     QPushButton:hover, QComboBox:hover {
         border-color: #2563eb;
