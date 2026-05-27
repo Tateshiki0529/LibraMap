@@ -1,118 +1,131 @@
-"""
-libramap.printing.escpos_printer
-
-ESC/POS 印刷モジュール。
-
-python-escpos ライブラリを使用して 58mm 感熱レシートプリンタへ印刷する。
-画像ラスタ印刷方式（specs.md §13.3）を採用する。
-
-仕様参照: specs.md §13
-"""
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from PIL import Image
 
-if TYPE_CHECKING:
-    pass
+
+RECEIPT_PROFILE = "POS-5890"
 
 
 class PrinterError(Exception):
-    """プリンタ接続・印刷エラーを表す例外クラス。"""
+    pass
 
 
 class EscPosPrinter:
-    """
-    ESC/POS レシートプリンタ制御クラス。
-
-    python-escpos を使用して USB/シリアル接続の感熱レシートプリンタへ印刷する。
-    画像ラスタ印刷方式を採用し、Pillow で生成した画像をそのまま送信する。
-
-    実機確認事項（specs.md §20.0.3）:
-        - ESC/POS 制御は実機プリンタで必ず検証すること
-        - 用紙幅 58mm・感熱ロール紙への適合を確認すること
-
-    使用方法:
-        printer = EscPosPrinter()
-        printer.connect(vendor_id=0x04b8, product_id=0x0202)
-        printer.print_image(image)
-        printer.disconnect()
-    """
-
     def __init__(self) -> None:
-        """プリンタインスタンスを初期化する。接続は connect() で行う。"""
+        self._mode = "dummy"
         self._printer = None
+        self._file_path: str | None = None
+        self._connection_info = "シミュレーション"
 
-    def connect(self, vendor_id: int, product_id: int) -> None:
-        """
-        USB 接続のプリンタへ接続する。
+    def connect(
+        self,
+        vendor_id: int = 0x04B8,
+        product_id: int = 0x0202,
+        file_path: str | None = None,
+        dummy: bool = False,
+    ) -> None:
+        self.disconnect()
+        if dummy:
+            self._set_dummy()
+            return
 
-        Args:
-            vendor_id: USB ベンダー ID（16 進数）
-            product_id: USB プロダクト ID（16 進数）
+        if file_path:
+            try:
+                from escpos.printer import File
 
-        Raises:
-            PrinterError: 接続に失敗した場合
-        """
+                test_printer = File(file_path, profile=RECEIPT_PROFILE)
+                test_printer.close()
+                self._mode = "file"
+                self._file_path = file_path
+                self._connection_info = f"共有プリンタ: {file_path}"
+                return
+            except Exception:
+                self._set_dummy()
+                return
+
+        if not self._usb_backend_available():
+            self._set_dummy()
+            return
+
         try:
-            from escpos.printer import Usb  # type: ignore[import]
-            self._printer = Usb(vendor_id, product_id)
-        except Exception as exc:
-            raise PrinterError(f"プリンタ接続エラー: {exc}") from exc
+            from escpos.printer import Usb
+
+            printer = Usb(vendor_id, product_id, profile=RECEIPT_PROFILE)
+            printer.open()
+            printer.close()
+            self._printer = printer
+            self._mode = "usb"
+            self._connection_info = f"USBプリンタ: {hex(vendor_id)}:{hex(product_id)}"
+        except Exception:
+            self._set_dummy()
 
     def disconnect(self) -> None:
-        """プリンタ接続を切断する。接続されていない場合は何もしない。"""
         if self._printer is not None:
             try:
                 self._printer.close()
             except Exception:
                 pass
-            finally:
-                self._printer = None
+        self._printer = None
+        self._file_path = None
+        self._mode = "unconnected"
+        self._connection_info = ""
 
-    def print_image(self, image: Image.Image) -> None:
-        """
-        Pillow 画像をプリンタへ送信して印刷する（画像ラスタ印刷）。
+    def print_image(self, image: Image.Image, save_image: bool = False) -> Path | None:
+        save_path = self._save_image(image) if save_image or self._mode in {"dummy", "unconnected"} else None
 
-        Args:
-            image: 印刷する Pillow 画像オブジェクト
+        if self._mode == "file" and self._file_path:
+            try:
+                from escpos.printer import File
 
-        Raises:
-            PrinterError: プリンタ未接続または印刷失敗の場合
-        """
-        if self._printer is None:
-            raise PrinterError("プリンタが接続されていません。connect() を先に呼び出してください。")
+                printer = File(self._file_path, profile=RECEIPT_PROFILE)
+                printer.image(image)
+                printer.cut()
+                printer.close()
+            except Exception as exc:
+                raise PrinterError(f"共有プリンタへの印刷に失敗しました: {exc}") from exc
+        elif self._mode == "usb" and self._printer is not None:
+            try:
+                self._printer.image(image)
+                self._printer.cut()
+            except Exception as exc:
+                raise PrinterError(f"USBプリンタへの印刷に失敗しました: {exc}") from exc
 
-        try:
-            self._printer.image(image)
-            self._printer.cut()
-        except Exception as exc:
-            raise PrinterError(f"印刷エラー: {exc}") from exc
-
-    def print_image_from_file(self, image_path: Path) -> None:
-        """
-        画像ファイルを指定してプリンタへ送信する。
-
-        Args:
-            image_path: 印刷する画像ファイルのパス
-
-        Raises:
-            PrinterError: ファイル読み込み失敗またはプリンタエラーの場合
-        """
-        try:
-            image = Image.open(image_path)
-        except OSError as exc:
-            raise PrinterError(f"画像ファイル読み込みエラー: {exc}") from exc
-
-        self.print_image(image)
+        return save_path
 
     def is_connected(self) -> bool:
-        """
-        プリンタが接続済みかどうかを返す。
+        return self._mode != "unconnected"
 
-        Returns:
-            bool: 接続済みの場合 True
-        """
-        return self._printer is not None
+    def get_status_message(self) -> str:
+        if self._mode == "unconnected":
+            return "プリンタ未接続"
+        if self._mode == "dummy":
+            return "シミュレーション中"
+        return f"接続中: {self._connection_info}"
+
+    def get_mode(self) -> str:
+        return self._mode
+
+    def _set_dummy(self) -> None:
+        self._mode = "dummy"
+        self._connection_info = "シミュレーション"
+
+    @staticmethod
+    def _usb_backend_available() -> bool:
+        try:
+            import usb.backend.libusb1
+            import usb.core
+        except Exception:
+            return False
+        return usb.backend.libusb1.get_backend() is not None
+
+    @staticmethod
+    def _save_image(image: Image.Image) -> Path:
+        output_dir = Path("data") / "receipts"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"receipt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+        output_path = output_dir / filename
+        image.save(output_path, format="PNG")
+        return output_path
