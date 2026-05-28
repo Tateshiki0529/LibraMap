@@ -26,6 +26,16 @@ class BarcodeProcessorTest(unittest.TestCase):
         result = BarcodeProcessor().process("4901234567894")
         self.assertEqual(result.barcode_type, BarcodeType.JAN_OTHER)
 
+    def test_isbn10_converts_to_isbn13(self) -> None:
+        result = BarcodeProcessor().process("4101010110")
+        self.assertEqual(result.barcode_type, BarcodeType.ISBN13)
+        self.assertEqual(result.isbn, "9784101010113")
+
+    def test_isbn10_with_x_check_digit_converts_to_isbn13(self) -> None:
+        result = BarcodeProcessor().process("123456789X")
+        self.assertEqual(result.barcode_type, BarcodeType.ISBN13)
+        self.assertEqual(result.isbn, "9781234567897")
+
 
 class PlacementEngineTest(unittest.TestCase):
     def setUp(self) -> None:
