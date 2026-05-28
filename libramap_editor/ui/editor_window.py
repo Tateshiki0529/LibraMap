@@ -31,13 +31,22 @@ from libramap_editor.model import OBJECT_TYPES, MapDataError, ShelfMapDocument
 
 class EditorWindow(QMainWindow):
     STYLE_SHEET = """
-    QMainWindow, QWidget#central {
+    QMainWindow, QWidget#central, QWidget {
         background: #f5f7fb;
         color: #111827;
         font-family: "Meiryo", "Segoe UI", sans-serif;
     }
+    QFrame#objectFormFrame {
+        background: #ffffff;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+    }
     QLabel {
         color: #111827;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 0;
     }
     QLineEdit, QSpinBox, QComboBox, QListWidget, QTableWidget {
         background: #ffffff;
@@ -45,6 +54,60 @@ class EditorWindow(QMainWindow):
         border: 1px solid #9ca3af;
         border-radius: 4px;
         padding: 4px;
+        selection-background-color: #2563eb;
+        selection-color: #ffffff;
+    }
+    QSpinBox, QComboBox {
+        min-height: 30px;
+    }
+    QSpinBox::up-button, QSpinBox::down-button {
+        background: #f3f4f6;
+        border-left: 1px solid #9ca3af;
+        width: 18px;
+    }
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+        background: #e5e7eb;
+    }
+    QSpinBox::up-arrow, QSpinBox::down-arrow {
+        width: 8px;
+        height: 8px;
+    }
+    QComboBox::drop-down {
+        border-left: 1px solid #9ca3af;
+        width: 22px;
+        background: #f9fafb;
+    }
+    QComboBox QAbstractItemView {
+        background: #ffffff;
+        color: #111827;
+        selection-background-color: #2563eb;
+        selection-color: #ffffff;
+    }
+    QListWidget::item:selected, QTableWidget::item:selected {
+        background: #2563eb;
+        color: #ffffff;
+    }
+    QTableWidget {
+        gridline-color: #d1d5db;
+        alternate-background-color: #f9fafb;
+    }
+    QHeaderView::section {
+        background: #e5e7eb;
+        color: #111827;
+        border: 1px solid #d1d5db;
+        padding: 6px 8px;
+        font-weight: 600;
+    }
+    QMessageBox, QDialog {
+        background: #ffffff;
+        color: #111827;
+    }
+    QMessageBox QLabel, QDialog QLabel {
+        background: transparent;
+        color: #111827;
+        border: none;
+        border-radius: 0;
+        padding: 0;
     }
     QPushButton {
         background: #ffffff;
@@ -162,14 +225,24 @@ class EditorWindow(QMainWindow):
     def _build_right_panel(self) -> QVBoxLayout:
         layout = QVBoxLayout()
         layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         object_frame = QFrame()
+        object_frame.setObjectName("objectFormFrame")
         object_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        object_frame.setMinimumWidth(340)
         form = QFormLayout(object_frame)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self._object_id = QLineEdit()
+        self._object_id.setMinimumWidth(220)
+        self._object_id.setMinimumHeight(30)
         self._object_id.editingFinished.connect(self._apply_object_form)
         self._object_type = QComboBox()
+        self._object_type.setMinimumWidth(220)
         self._object_type.addItems(list(OBJECT_TYPES))
         self._object_type.currentTextChanged.connect(self._apply_object_form)
         self._x = self._spin(0, 5000)
@@ -180,6 +253,7 @@ class EditorWindow(QMainWindow):
         self._cols = self._spin(1, 50)
 
         for spin in (self._x, self._y, self._width, self._height, self._rows, self._cols):
+            spin.setMinimumWidth(220)
             spin.valueChanged.connect(self._apply_object_form)
 
         form.addRow("ID", self._object_id)
@@ -205,6 +279,8 @@ class EditorWindow(QMainWindow):
         self._segments = QTableWidget(0, 5)
         self._segments.setHorizontalHeaderLabels(["段", "開始列", "終了列", "NDC開始", "NDC終了"])
         self._segments.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._segments.setAlternatingRowColors(True)
+        self._segments.setMinimumHeight(180)
         self._segments.itemChanged.connect(self._apply_segment_table)
         layout.addWidget(self._segments, 1)
         return layout
