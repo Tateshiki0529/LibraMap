@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +18,7 @@ class EscPosPrinter:
         self._mode = "dummy"
         self._printer = None
         self._file_path: str | None = None
-        self._connection_info = "シミュレーション"
+        self._connection_info = "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ"
 
     def connect(
         self,
@@ -40,7 +40,7 @@ class EscPosPrinter:
                 test_printer.close()
                 self._mode = "file"
                 self._file_path = file_path
-                self._connection_info = f"共有プリンタ: {file_path}"
+                self._connection_info = f"蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ: {file_path}"
                 return
             except Exception:
                 self._set_dummy()
@@ -58,7 +58,7 @@ class EscPosPrinter:
             printer.close()
             self._printer = printer
             self._mode = "usb"
-            self._connection_info = f"USBプリンタ: {hex(vendor_id)}:{hex(product_id)}"
+            self._connection_info = f"USB繝励Μ繝ｳ繧ｿ: {hex(vendor_id)}:{hex(product_id)}"
         except Exception:
             self._set_dummy()
 
@@ -85,13 +85,15 @@ class EscPosPrinter:
                 printer.cut()
                 printer.close()
             except Exception as exc:
-                raise PrinterError(f"共有プリンタへの印刷に失敗しました: {exc}") from exc
+                raise PrinterError(f"蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
         elif self._mode == "usb" and self._printer is not None:
             try:
+                self._printer.open()
                 self._printer.image(image)
                 self._printer.cut()
+                self._printer.close()
             except Exception as exc:
-                raise PrinterError(f"USBプリンタへの印刷に失敗しました: {exc}") from exc
+                raise PrinterError(f"USB繝励Μ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
 
         return save_path
 
@@ -100,17 +102,17 @@ class EscPosPrinter:
 
     def get_status_message(self) -> str:
         if self._mode == "unconnected":
-            return "プリンタ未接続"
+            return "繝励Μ繝ｳ繧ｿ譛ｪ謗･邯・
         if self._mode == "dummy":
-            return "シミュレーション中"
-        return f"接続中: {self._connection_info}"
+            return "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ荳ｭ"
+        return f"謗･邯壻ｸｭ: {self._connection_info}"
 
     def get_mode(self) -> str:
         return self._mode
 
     def _set_dummy(self) -> None:
         self._mode = "dummy"
-        self._connection_info = "シミュレーション"
+        self._connection_info = "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ"
 
     @staticmethod
     def _usb_backend_available() -> bool:
@@ -129,3 +131,4 @@ class EscPosPrinter:
         output_path = output_dir / filename
         image.save(output_path, format="PNG")
         return output_path
+
