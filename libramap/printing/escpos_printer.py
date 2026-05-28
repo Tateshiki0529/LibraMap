@@ -82,7 +82,7 @@ class EscPosPrinter:
 
                 printer = File(self._file_path, profile=RECEIPT_PROFILE)
                 printer.image(image)
-                printer.cut()
+                self._cut(printer)
                 printer.close()
             except Exception as exc:
                 raise PrinterError(f"蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
@@ -90,7 +90,7 @@ class EscPosPrinter:
             try:
                 self._printer.open()
                 self._printer.image(image)
-                self._printer.cut()
+                self._cut(self._printer)
                 self._printer.close()
             except Exception as exc:
                 raise PrinterError(f"USB繝励Μ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
@@ -102,10 +102,10 @@ class EscPosPrinter:
 
     def get_status_message(self) -> str:
         if self._mode == "unconnected":
-            return "繝励Μ繝ｳ繧ｿ譛ｪ謗･邯・
+            return "Printer not connected"
         if self._mode == "dummy":
-            return "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ荳ｭ"
-        return f"謗･邯壻ｸｭ: {self._connection_info}"
+            return "Dummy printer mode"
+        return f"Connected: {self._connection_info}"
 
     def get_mode(self) -> str:
         return self._mode
@@ -131,4 +131,19 @@ class EscPosPrinter:
         output_path = output_dir / filename
         image.save(output_path, format="PNG")
         return output_path
+
+    @staticmethod
+    def _cut(printer) -> None:
+        try:
+            printer.feed(4)
+        except Exception:
+            pass
+        try:
+            printer.cut()
+            return
+        except Exception:
+            pass
+        if hasattr(printer, '_raw'):
+            printer._raw(b'\x1d\x56\x00')
+
 
