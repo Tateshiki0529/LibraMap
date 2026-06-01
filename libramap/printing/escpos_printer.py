@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
@@ -16,9 +17,9 @@ class PrinterError(Exception):
 class EscPosPrinter:
     def __init__(self) -> None:
         self._mode = "dummy"
-        self._printer = None
+        self._printer: Any = None
         self._file_path: str | None = None
-        self._connection_info = "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ"
+        self._connection_info = "Dummy printer"
 
     def connect(
         self,
@@ -40,7 +41,7 @@ class EscPosPrinter:
                 test_printer.close()
                 self._mode = "file"
                 self._file_path = file_path
-                self._connection_info = f"蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ: {file_path}"
+                self._connection_info = f"Shared printer: {file_path}"
                 return
             except Exception:
                 self._set_dummy()
@@ -58,16 +59,13 @@ class EscPosPrinter:
             printer.close()
             self._printer = printer
             self._mode = "usb"
-            self._connection_info = f"USB繝励Μ繝ｳ繧ｿ: {hex(vendor_id)}:{hex(product_id)}"
+            self._connection_info = f"USB printer: {hex(vendor_id)}:{hex(product_id)}"
         except Exception:
             self._set_dummy()
 
     def disconnect(self) -> None:
         if self._printer is not None:
-            try:
-                self._printer.close()
-            except Exception:
-                pass
+            self._safe_close(self._printer)
         self._printer = None
         self._file_path = None
         self._mode = "unconnected"
@@ -83,17 +81,18 @@ class EscPosPrinter:
                 printer = File(self._file_path, profile=RECEIPT_PROFILE)
                 printer.image(image)
                 self._cut(printer)
-                printer.close()
+                self._safe_close(printer)
             except Exception as exc:
-                raise PrinterError(f"蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
+                raise PrinterError(f"Shared printer print failed: {exc}") from exc
+
         elif self._mode == "usb" and self._printer is not None:
             try:
                 self._printer.open()
                 self._printer.image(image)
                 self._cut(self._printer)
-                self._printer.close()
+                self._safe_close(self._printer)
             except Exception as exc:
-                raise PrinterError(f"USB繝励Μ繝ｳ繧ｿ縺ｸ縺ｮ蜊ｰ蛻ｷ縺ｫ螟ｱ謨励＠縺ｾ縺励◆: {exc}") from exc
+                raise PrinterError(f"USB print failed: {exc}") from exc
 
         return save_path
 
@@ -112,7 +111,7 @@ class EscPosPrinter:
 
     def _set_dummy(self) -> None:
         self._mode = "dummy"
-        self._connection_info = "繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ"
+        self._connection_info = "Dummy printer"
 
     @staticmethod
     def _usb_backend_available() -> bool:
@@ -133,17 +132,36 @@ class EscPosPrinter:
         return output_path
 
     @staticmethod
-    def _cut(printer) -> None:
+    def _safe_close(printer: Any) -> None:
         try:
-            printer.feed(4)
+            printer.close()
         except Exception:
             pass
+
+    @staticmethod
+    def _cut(printer: Any) -> None:
+        # Feed first for 58mm devices that ignore cut near bottom edge.
+        try:
+            printer.feed(6)
+        except Exception:
+            try:
+                printer._raw(b"\n\n\n\n\n\n")
+            except Exception:
+                pass
+
+        # Try library cut API first.
+        try:
+            printer.cut(mode="FULL")
+            return
+        except Exception:
+            pass
+
         try:
             printer.cut()
             return
         except Exception:
             pass
-        if hasattr(printer, '_raw'):
-            printer._raw(b'\x1d\x56\x00')
 
-
+        # Final fallback: ESC/POS GS V full-cut command.
+        if hasattr(printer, "_raw"):
+            printer._raw(b"\x1d\x56\x00")
