@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -26,7 +26,21 @@ from PySide6.QtWidgets import (
 )
 
 from libramap.printing.receipt_renderer import FloorMapRenderer
+from libramap.ndc_map import NDC_3_LABELS, get_ndc_label
 from libramap_editor.model import OBJECT_TYPES, MapDataError, ShelfMapDocument
+
+NDC_MAJOR_CLASSES = [
+    ("0", "総記"),
+    ("1", "哲学"),
+    ("2", "歴史"),
+    ("3", "社会科学"),
+    ("4", "自然科学"),
+    ("5", "技術"),
+    ("6", "産業"),
+    ("7", "芸術"),
+    ("8", "言語"),
+    ("9", "文学"),
+]
 
 
 class EditorWindow(QMainWindow):
@@ -282,7 +296,39 @@ class EditorWindow(QMainWindow):
         self._segments.setAlternatingRowColors(True)
         self._segments.setMinimumHeight(180)
         self._segments.itemChanged.connect(self._apply_segment_table)
+        self._segments.currentCellChanged.connect(self._on_segment_row_changed)
         layout.addWidget(self._segments, 1)
+
+        form.addRow(QLabel("NDC開始セレクト"))
+        self._ndc_start_major = QComboBox()
+        self._ndc_start_minor = QComboBox()
+        self._ndc_start_manual = QLineEdit()
+        self._ndc_start_manual.setPlaceholderText("例: 913.6")
+        self._populate_ndc_selectors(self._ndc_start_major, self._ndc_start_minor)
+        start_line = QHBoxLayout()
+        start_line.addWidget(self._ndc_start_major, 1)
+        start_line.addWidget(self._ndc_start_minor, 2)
+        form.addRow("類/3桁", start_line)
+        form.addRow("手動", self._ndc_start_manual)
+
+        form.addRow(QLabel("NDC終了セレクト"))
+        self._ndc_end_major = QComboBox()
+        self._ndc_end_minor = QComboBox()
+        self._ndc_end_manual = QLineEdit()
+        self._ndc_end_manual.setPlaceholderText("例: 999")
+        self._populate_ndc_selectors(self._ndc_end_major, self._ndc_end_minor)
+        end_line = QHBoxLayout()
+        end_line.addWidget(self._ndc_end_major, 1)
+        end_line.addWidget(self._ndc_end_minor, 2)
+        form.addRow("類/3桁", end_line)
+        form.addRow("手動", self._ndc_end_manual)
+
+        self._ndc_start_major.currentTextChanged.connect(self._on_ndc_major_changed)
+        self._ndc_end_major.currentTextChanged.connect(self._on_ndc_major_changed)
+        self._ndc_start_minor.currentTextChanged.connect(self._on_ndc_minor_changed)
+        self._ndc_end_minor.currentTextChanged.connect(self._on_ndc_minor_changed)
+        self._ndc_start_manual.editingFinished.connect(self._on_ndc_manual_changed)
+        self._ndc_end_manual.editingFinished.connect(self._on_ndc_manual_changed)
         return layout
 
     @staticmethod
@@ -327,12 +373,29 @@ class EditorWindow(QMainWindow):
         self._loading = True
         obj = self._current_object()
         enabled = obj is not None
-        for widget in (self._object_id, self._object_type, self._x, self._y, self._width, self._height, self._rows, self._cols, self._segments):
+        for widget in (
+            self._object_id,
+            self._object_type,
+            self._x,
+            self._y,
+            self._width,
+            self._height,
+            self._rows,
+            self._cols,
+            self._segments,
+            self._ndc_start_major,
+            self._ndc_start_minor,
+            self._ndc_start_manual,
+            self._ndc_end_major,
+            self._ndc_end_minor,
+            self._ndc_end_manual,
+        ):
             widget.setEnabled(enabled)
 
         if obj is None:
             self._object_id.clear()
             self._segments.setRowCount(0)
+            self._set_ndc_controls("", "")
             self._loading = False
             return
 
@@ -348,7 +411,14 @@ class EditorWindow(QMainWindow):
         self._rows.setEnabled(is_shelf)
         self._cols.setEnabled(is_shelf)
         self._segments.setEnabled(is_shelf)
+        self._ndc_start_major.setEnabled(is_shelf)
+        self._ndc_start_minor.setEnabled(is_shelf)
+        self._ndc_start_manual.setEnabled(is_shelf)
+        self._ndc_end_major.setEnabled(is_shelf)
+        self._ndc_end_minor.setEnabled(is_shelf)
+        self._ndc_end_manual.setEnabled(is_shelf)
         self._refresh_segments(obj)
+        self._load_selected_segment_ndc()
         self._loading = False
 
     def _refresh_segments(self, obj: dict) -> None:
@@ -365,6 +435,8 @@ class EditorWindow(QMainWindow):
             ]
             for col_index, value in enumerate(values):
                 self._segments.setItem(row_index, col_index, QTableWidgetItem(str(value)))
+        if segments:
+            self._segments.setCurrentCell(0, 0)
         self._segments.blockSignals(False)
 
     def _refresh_preview(self) -> None:
@@ -545,10 +617,124 @@ class EditorWindow(QMainWindow):
                 "ndc_end": self._segments.item(row, 4).text(),
             }
             self._document.update_segment(self._selected_floor_id, self._selected_object_id, row, values)
+            if row == self._segments.currentRow():
+                self._set_ndc_controls(values["ndc_start"], values["ndc_end"])
             self._refresh_preview()
         except Exception as exc:
             self._show_error(str(exc))
             self._refresh_object_form()
+
+    @Slot(int, int, int, int)
+    def _on_segment_row_changed(self, row: int, _col: int, _prev_row: int, _prev_col: int) -> None:
+        if row < 0 or self._loading:
+            return
+        self._load_selected_segment_ndc()
+
+    @Slot()
+    def _on_ndc_major_changed(self) -> None:
+        if self._loading:
+            return
+        sender = self.sender()
+        if sender == self._ndc_start_major:
+            self._populate_ndc_minor(self._ndc_start_major, self._ndc_start_minor)
+            value = self._ndc_start_minor.currentData() or self._ndc_start_minor.currentText().split(" ", 1)[0]
+            self._ndc_start_manual.setText(str(value))
+            self._apply_selected_segment_ndc(self._ndc_start_manual.text(), self._ndc_end_manual.text())
+        elif sender == self._ndc_end_major:
+            self._populate_ndc_minor(self._ndc_end_major, self._ndc_end_minor)
+            value = self._ndc_end_minor.currentData() or self._ndc_end_minor.currentText().split(" ", 1)[0]
+            self._ndc_end_manual.setText(str(value))
+            self._apply_selected_segment_ndc(self._ndc_start_manual.text(), self._ndc_end_manual.text())
+
+    @Slot()
+    def _on_ndc_minor_changed(self) -> None:
+        if self._loading:
+            return
+        sender = self.sender()
+        if sender == self._ndc_start_minor:
+            self._ndc_start_manual.setText(str(self._ndc_start_minor.currentData() or ""))
+        elif sender == self._ndc_end_minor:
+            self._ndc_end_manual.setText(str(self._ndc_end_minor.currentData() or ""))
+        self._apply_selected_segment_ndc(self._ndc_start_manual.text(), self._ndc_end_manual.text())
+
+    @Slot()
+    def _on_ndc_manual_changed(self) -> None:
+        if self._loading:
+            return
+        self._set_ndc_controls(self._ndc_start_manual.text(), self._ndc_end_manual.text())
+        self._apply_selected_segment_ndc(self._ndc_start_manual.text(), self._ndc_end_manual.text())
+
+    def _apply_selected_segment_ndc(self, ndc_start: str, ndc_end: str) -> None:
+        row = self._segments.currentRow()
+        if row < 0 or self._loading:
+            return
+        for col_index, value in ((3, ndc_start.strip()), (4, ndc_end.strip())):
+            item = self._segments.item(row, col_index)
+            if item is None:
+                item = QTableWidgetItem(value)
+                self._segments.setItem(row, col_index, item)
+            elif item.text() != value:
+                item.setText(value)
+
+    def _load_selected_segment_ndc(self) -> None:
+        row = self._segments.currentRow()
+        if row < 0:
+            self._set_ndc_controls("", "")
+            return
+        start_item = self._segments.item(row, 3)
+        end_item = self._segments.item(row, 4)
+        ndc_start = start_item.text() if start_item else ""
+        ndc_end = end_item.text() if end_item else ""
+        self._set_ndc_controls(ndc_start, ndc_end)
+
+    def _set_ndc_controls(self, ndc_start: str, ndc_end: str) -> None:
+        previous_loading = self._loading
+        self._loading = True
+        try:
+            self._set_single_ndc_control(self._ndc_start_major, self._ndc_start_minor, self._ndc_start_manual, ndc_start)
+            self._set_single_ndc_control(self._ndc_end_major, self._ndc_end_minor, self._ndc_end_manual, ndc_end)
+        finally:
+            self._loading = previous_loading
+
+    def _set_single_ndc_control(self, major: QComboBox, minor: QComboBox, manual: QLineEdit, ndc_value: str) -> None:
+        ndc_text = ndc_value.strip()
+        code = self._extract_ndc3(ndc_text)
+        major_key = code[0] if code else "0"
+        index = major.findData(major_key)
+        if index >= 0:
+            with QSignalBlocker(major):
+                major.setCurrentIndex(index)
+        self._populate_ndc_minor(major, minor)
+        if code:
+            index = minor.findData(code)
+            if index >= 0:
+                with QSignalBlocker(minor):
+                    minor.setCurrentIndex(index)
+        manual.setText(ndc_text)
+
+    def _populate_ndc_selectors(self, major: QComboBox, minor: QComboBox) -> None:
+        major.clear()
+        for key, label in NDC_MAJOR_CLASSES:
+            major.addItem(f"{key} {label}", key)
+        self._populate_ndc_minor(major, minor)
+
+    def _populate_ndc_minor(self, major: QComboBox, minor: QComboBox) -> None:
+        selected = major.currentData() or "0"
+        base = int(selected) * 100
+        with QSignalBlocker(minor):
+            minor.clear()
+            for value in range(base, base + 100):
+                code = f"{value:03d}"
+                label = get_ndc_label(code) or NDC_3_LABELS.get(code, "") or ""
+                text = f"{code} {label}".strip()
+                minor.addItem(text, code)
+
+    @staticmethod
+    def _extract_ndc3(value: str) -> str | None:
+        ndc = value.strip()
+        if len(ndc) < 3 or not ndc[:3].isdigit():
+            return None
+        return ndc[:3]
 
     def _next_object_id(self, obj_type: str) -> str:
         prefix = {
