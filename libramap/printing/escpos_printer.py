@@ -26,6 +26,7 @@ class EscPosPrinter:
         self._cut_experiment = (
             os.getenv("LIBRAMAP_PRINTER_CUT_EXPERIMENT", "").strip().lower() in {"1", "true", "yes", "on"}
         )
+        self._shared_cut_cmd = os.getenv("LIBRAMAP_SHARED_CUT_CMD", "gs_v_42_00").strip().lower()
 
     def connect(
         self,
@@ -242,21 +243,25 @@ class EscPosPrinter:
             return
 
     def _shared_cut_sequence(self, printer: Any) -> None:
-        # Minimal sequence observed to pass through shared-printer paths.
-        try:
-            printer.cut(mode="FULL")
-            self._log("cut: shared cut(mode='FULL') ok")
-        except Exception:
-            self._log("cut: shared cut(mode='FULL') failed")
+        # Send exactly one cut command in shared mode to avoid multi-cut.
         if not hasattr(printer, "_raw"):
-            return
-        for label, payload in (
-            ("GS V 00", b"\x1d\x56\x00"),
-            ("GS V 42 00", b"\x1d\x56\x42\x00"),
-        ):
             try:
-                self._log(f"cut: shared trying raw {label}")
-                printer._raw(payload)
-                self._log(f"cut: shared raw {label} sent")
+                printer.cut(mode="PART")
+                self._log("cut: shared cut(mode='PART') ok")
             except Exception as exc:
-                self._log(f"cut: shared raw {label} failed: {exc!r}")
+                self._log(f"cut: shared cut(mode='PART') failed: {exc!r}")
+            return
+
+        mapping: dict[str, tuple[str, bytes]] = {
+            "gs_v_00": ("GS V 00", b"\x1d\x56\x00"),
+            "gs_v_01": ("GS V 01", b"\x1d\x56\x01"),
+            "gs_v_41_00": ("GS V 41 00", b"\x1d\x56\x41\x00"),
+            "gs_v_42_00": ("GS V 42 00", b"\x1d\x56\x42\x00"),
+        }
+        label, payload = mapping.get(self._shared_cut_cmd, mapping["gs_v_42_00"])
+        try:
+            self._log(f"cut: shared trying raw {label}")
+            printer._raw(payload)
+            self._log(f"cut: shared raw {label} sent")
+        except Exception as exc:
+            self._log(f"cut: shared raw {label} failed: {exc!r}")
