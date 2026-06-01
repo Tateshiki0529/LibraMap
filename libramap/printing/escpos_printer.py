@@ -178,7 +178,15 @@ class EscPosPrinter:
             except Exception:
                 self._log("cut: raw newlines failed")
 
-        # Try library cut API first.
+        # Try library cut API first (partial cut priority).
+        try:
+            printer.cut(mode="PART")
+            self._log("cut: cut(mode='PART') ok")
+            if not self._cut_experiment:
+                return
+        except Exception:
+            self._log("cut: cut(mode='PART') failed")
+
         try:
             printer.cut(mode="FULL")
             self._log("cut: cut(mode='FULL') ok")
@@ -216,7 +224,7 @@ class EscPosPrinter:
                     self._log(f"cut: raw {label} failed: {exc!r}")
             return
 
-        # Standard fallback.
-        self._log("cut: trying raw GS V 00")
-        printer._raw(b"\x1d\x56\x00")
-        self._log("cut: raw GS V 00 sent")
+        # Standard fallback (partial).
+        self._log("cut: trying raw GS V 01")
+        printer._raw(b"\x1d\x56\x01")
+        self._log("cut: raw GS V 01 sent")
