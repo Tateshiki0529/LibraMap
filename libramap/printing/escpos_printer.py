@@ -97,7 +97,7 @@ class EscPosPrinter:
 
                 printer = File(self._file_path, profile=RECEIPT_PROFILE)
                 printer.image(image)
-                self._cut(printer)
+                self._cut(printer, shared_mode=True)
                 self._safe_close(printer)
             except Exception as exc:
                 self._log(f"file print failed: {exc!r}")
@@ -107,7 +107,7 @@ class EscPosPrinter:
             try:
                 self._printer.open()
                 self._printer.image(image)
-                self._cut(self._printer)
+                self._cut(self._printer, shared_mode=False)
                 self._safe_close(self._printer)
             except Exception as exc:
                 self._log(f"usb print failed: {exc!r}")
@@ -165,7 +165,7 @@ class EscPosPrinter:
         except Exception:
             pass
 
-    def _cut(self, printer: Any) -> None:
+    def _cut(self, printer: Any, shared_mode: bool) -> None:
         # Feed first for 58mm devices that ignore cut near bottom edge.
         try:
             printer.feed(6)
@@ -178,28 +178,45 @@ class EscPosPrinter:
             except Exception:
                 self._log("cut: raw newlines failed")
 
-        # Try library cut API first (partial cut priority).
+        # Standard mode:
+        # - USB: single command priority to avoid double-cut.
+        # - Shared printer: short sequence to survive spooler/driver conversion.
+        if not self._cut_experiment:
+            if shared_mode:
+                self._log("cut: shared mode short sequence")
+                self._shared_cut_sequence(printer)
+                return
+            try:
+                printer.cut(mode="PART")
+                self._log("cut: cut(mode='PART') ok")
+                return
+            except Exception:
+                self._log("cut: cut(mode='PART') failed")
+            try:
+                printer.cut()
+                self._log("cut: cut() ok")
+                return
+            except Exception:
+                self._log("cut: cut() failed")
+            if hasattr(printer, "_raw"):
+                self._log("cut: trying raw GS V 01")
+                printer._raw(b"\x1d\x56\x01")
+                self._log("cut: raw GS V 01 sent")
+            return
+
         try:
             printer.cut(mode="PART")
             self._log("cut: cut(mode='PART') ok")
-            if not self._cut_experiment:
-                return
         except Exception:
             self._log("cut: cut(mode='PART') failed")
-
         try:
             printer.cut(mode="FULL")
             self._log("cut: cut(mode='FULL') ok")
-            if not self._cut_experiment:
-                return
         except Exception:
             self._log("cut: cut(mode='FULL') failed")
-
         try:
             printer.cut()
             self._log("cut: cut() ok")
-            if not self._cut_experiment:
-                return
         except Exception:
             self._log("cut: cut() failed")
 
@@ -224,7 +241,22 @@ class EscPosPrinter:
                     self._log(f"cut: raw {label} failed: {exc!r}")
             return
 
-        # Standard fallback (partial).
-        self._log("cut: trying raw GS V 01")
-        printer._raw(b"\x1d\x56\x01")
-        self._log("cut: raw GS V 01 sent")
+    def _shared_cut_sequence(self, printer: Any) -> None:
+        # Minimal sequence observed to pass through shared-printer paths.
+        try:
+            printer.cut(mode="FULL")
+            self._log("cut: shared cut(mode='FULL') ok")
+        except Exception:
+            self._log("cut: shared cut(mode='FULL') failed")
+        if not hasattr(printer, "_raw"):
+            return
+        for label, payload in (
+            ("GS V 00", b"\x1d\x56\x00"),
+            ("GS V 42 00", b"\x1d\x56\x42\x00"),
+        ):
+            try:
+                self._log(f"cut: shared trying raw {label}")
+                printer._raw(payload)
+                self._log(f"cut: shared raw {label} sent")
+            except Exception as exc:
+                self._log(f"cut: shared raw {label} failed: {exc!r}")
