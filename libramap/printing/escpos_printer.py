@@ -23,6 +23,9 @@ class EscPosPrinter:
         self._file_path: str | None = None
         self._connection_info = "Dummy printer"
         self._debug = os.getenv("LIBRAMAP_PRINTER_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+        self._cut_experiment = (
+            os.getenv("LIBRAMAP_PRINTER_CUT_EXPERIMENT", "").strip().lower() in {"1", "true", "yes", "on"}
+        )
 
     def connect(
         self,
@@ -179,19 +182,41 @@ class EscPosPrinter:
         try:
             printer.cut(mode="FULL")
             self._log("cut: cut(mode='FULL') ok")
-            return
+            if not self._cut_experiment:
+                return
         except Exception:
             self._log("cut: cut(mode='FULL') failed")
 
         try:
             printer.cut()
             self._log("cut: cut() ok")
-            return
+            if not self._cut_experiment:
+                return
         except Exception:
             self._log("cut: cut() failed")
 
-        # Final fallback: ESC/POS GS V full-cut command.
-        if hasattr(printer, "_raw"):
-            self._log("cut: trying raw GS V 00")
-            printer._raw(b"\x1d\x56\x00")
-            self._log("cut: raw GS V 00 sent")
+        if not hasattr(printer, "_raw"):
+            self._log("cut: raw unavailable")
+            return
+
+        if self._cut_experiment:
+            self._log("cut: experiment mode enabled")
+            raw_patterns: list[tuple[str, bytes]] = [
+                ("GS V 00 full cut", b"\x1d\x56\x00"),
+                ("GS V 01 partial cut", b"\x1d\x56\x01"),
+                ("GS V 41 00 full cut", b"\x1d\x56\x41\x00"),
+                ("GS V 42 00 partial cut", b"\x1d\x56\x42\x00"),
+            ]
+            for label, payload in raw_patterns:
+                try:
+                    self._log(f"cut: trying raw {label}")
+                    printer._raw(payload)
+                    self._log(f"cut: raw {label} sent")
+                except Exception as exc:
+                    self._log(f"cut: raw {label} failed: {exc!r}")
+            return
+
+        # Standard fallback.
+        self._log("cut: trying raw GS V 00")
+        printer._raw(b"\x1d\x56\x00")
+        self._log("cut: raw GS V 00 sent")
