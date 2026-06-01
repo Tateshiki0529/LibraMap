@@ -4,9 +4,30 @@
       "id": "1f",
       "name": "1階",
       "objects": [
-        {"type": "wall", "id": "wall-1f-north", "x": 0, "y": 0, "width": 800, "height": 10},
-        {"type": "return_box", "id": "return-box-1f", "x": 45, "y": 24, "width": 88, "height": 64},
-        {"type": "desk", "id": "counter-1f", "x": 280, "y": 24, "width": 240, "height": 64},
+        {
+          "type": "wall",
+          "id": "wall-1f-north",
+          "x": 0,
+          "y": 0,
+          "width": 800,
+          "height": 10
+        },
+        {
+          "type": "return_box",
+          "id": "return-box-1f",
+          "x": 45,
+          "y": 24,
+          "width": 88,
+          "height": 64
+        },
+        {
+          "type": "desk",
+          "id": "counter-1f",
+          "x": 280,
+          "y": 24,
+          "width": 240,
+          "height": 64
+        },
         {
           "type": "shelf",
           "id": "A-01",
@@ -17,9 +38,27 @@
           "rows": 5,
           "cols": 8,
           "segments": [
-            {"row": 0, "col_start": 0, "col_end": 7, "ndc_start": "000", "ndc_end": "099"},
-            {"row": 1, "col_start": 0, "col_end": 7, "ndc_start": "100", "ndc_end": "199"},
-            {"row": 2, "col_start": 0, "col_end": 7, "ndc_start": "200", "ndc_end": "299"}
+            {
+              "row": 0,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "000",
+              "ndc_end": "099"
+            },
+            {
+              "row": 1,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "100",
+              "ndc_end": "199"
+            },
+            {
+              "row": 2,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "200",
+              "ndc_end": "299"
+            }
           ]
         },
         {
@@ -32,10 +71,36 @@
           "rows": 5,
           "cols": 8,
           "segments": [
-            {"row": 0, "col_start": 0, "col_end": 7, "ndc_start": "300", "ndc_end": "399"},
-            {"row": 1, "col_start": 0, "col_end": 7, "ndc_start": "400", "ndc_end": "499"},
-            {"row": 2, "col_start": 0, "col_end": 7, "ndc_start": "500", "ndc_end": "599"}
+            {
+              "row": 0,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "300",
+              "ndc_end": "399"
+            },
+            {
+              "row": 1,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "400",
+              "ndc_end": "499"
+            },
+            {
+              "row": 2,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "500",
+              "ndc_end": "599"
+            }
           ]
+        },
+        {
+          "type": "elevator",
+          "id": "EV",
+          "x": 600,
+          "y": 20,
+          "width": 100,
+          "height": 80
         }
       ]
     },
@@ -43,8 +108,22 @@
       "id": "2f",
       "name": "2階",
       "objects": [
-        {"type": "stairs", "id": "stairs-2f", "x": 45, "y": 24, "width": 88, "height": 88},
-        {"type": "restricted", "id": "restricted-2f", "x": 590, "y": 24, "width": 165, "height": 190},
+        {
+          "type": "stairs",
+          "id": "stairs-2f",
+          "x": 45,
+          "y": 24,
+          "width": 88,
+          "height": 88
+        },
+        {
+          "type": "restricted",
+          "id": "restricted-2f",
+          "x": 590,
+          "y": 24,
+          "width": 165,
+          "height": 190
+        },
         {
           "type": "shelf",
           "id": "B-01",
@@ -55,9 +134,27 @@
           "rows": 5,
           "cols": 8,
           "segments": [
-            {"row": 0, "col_start": 0, "col_end": 7, "ndc_start": "600", "ndc_end": "699"},
-            {"row": 1, "col_start": 0, "col_end": 7, "ndc_start": "700", "ndc_end": "799"},
-            {"row": 2, "col_start": 0, "col_end": 7, "ndc_start": "800", "ndc_end": "899"}
+            {
+              "row": 0,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "600",
+              "ndc_end": "699"
+            },
+            {
+              "row": 1,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "700",
+              "ndc_end": "799"
+            },
+            {
+              "row": 2,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "800",
+              "ndc_end": "899"
+            }
           ]
         },
         {
@@ -70,11 +167,41 @@
           "rows": 5,
           "cols": 8,
           "segments": [
-            {"row": 0, "col_start": 0, "col_end": 7, "ndc_start": "900", "ndc_end": "912"},
-            {"row": 1, "col_start": 0, "col_end": 4, "ndc_start": "913", "ndc_end": "913.5"},
-            {"row": 2, "col_start": 3, "col_end": 5, "ndc_start": "913.6", "ndc_end": "913.8"},
-            {"row": 3, "col_start": 0, "col_end": 7, "ndc_start": "913.9", "ndc_end": "919"},
-            {"row": 4, "col_start": 0, "col_end": 7, "ndc_start": "920", "ndc_end": "999"}
+            {
+              "row": 0,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "900",
+              "ndc_end": "912"
+            },
+            {
+              "row": 1,
+              "col_start": 0,
+              "col_end": 4,
+              "ndc_start": "913",
+              "ndc_end": "913.5"
+            },
+            {
+              "row": 2,
+              "col_start": 3,
+              "col_end": 5,
+              "ndc_start": "913.6",
+              "ndc_end": "913.8"
+            },
+            {
+              "row": 3,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "913.9",
+              "ndc_end": "919"
+            },
+            {
+              "row": 4,
+              "col_start": 0,
+              "col_end": 7,
+              "ndc_start": "920",
+              "ndc_end": "999"
+            }
           ]
         }
       ]

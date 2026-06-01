@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from enum import Enum, auto
 
@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         header.addWidget(self._printer_selector)
         header.addWidget(self._printer_status)
         main.addLayout(header)
+        self._printer_selector.setCurrentIndex(1)
 
         self._scan_label = QLabel("ISBN-13 または 192系JANをスキャンしてください")
         self._scan_label.setFont(QFont("Meiryo", 16, QFont.Weight.Bold))
@@ -226,14 +227,12 @@ class MainWindow(QMainWindow):
             ndc = getattr(info, "ndc", "")
             placement = PlacementResult(
                 found=False,
-                message="館内蔵書DBに未登録です。相互利用・未登録資料の可能性があります。",
+                message="蔵書DBに未登録の資料です。画面表示とレシートを確認し、手動で返却先を確認してください。",
             )
             receipt_data = ReceiptData(title, creator, isbn, ndc, placement)
             save_path = self._printer.print_image(self._receipt_renderer.render(receipt_data), save_image=True)
             suffix = f"\nレシート画像: {save_path.name}" if save_path else ""
-            self._show_error(
-                f"対象外資料です。\nISBN: {isbn}\n書名: {title}\n要手動返却確認。{suffix}"
-            )
+            self._show_error(f"対象外資料です。\nISBN: {isbn}\n書名: {title}\n要手動返却確認。{suffix}")
             return
 
         title = record.title
@@ -321,12 +320,12 @@ class MainWindow(QMainWindow):
 
     def _show_warning(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_WARN)
-        self._status_title.setText("禁帯出資料")
+        self._status_title.setText("要注意資料")
         self._status_body.setText(message)
 
     def _show_error(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_ERROR)
-        self._status_title.setText("要手動確認")
+        self._status_title.setText("エラー")
         self._status_body.setText(message)
         self._map_label.clear()
 

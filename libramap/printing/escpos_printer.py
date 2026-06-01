@@ -1,7 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
+import sys
+from typing import Any
 
 from PIL import Image
 
@@ -16,9 +19,14 @@ class PrinterError(Exception):
 class EscPosPrinter:
     def __init__(self) -> None:
         self._mode = "dummy"
-        self._printer = None
+        self._printer: Any = None
         self._file_path: str | None = None
-        self._connection_info = "シミュレーション"
+        self._connection_info = "Dummy printer"
+        self._debug = os.getenv("LIBRAMAP_PRINTER_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+        self._cut_experiment = (
+            os.getenv("LIBRAMAP_PRINTER_CUT_EXPERIMENT", "").strip().lower() in {"1", "true", "yes", "on"}
+        )
+        self._shared_cut_cmd = os.getenv("LIBRAMAP_SHARED_CUT_CMD", "gs_v_42_00").strip().lower()
 
     def connect(
         self,
@@ -27,9 +35,13 @@ class EscPosPrinter:
         file_path: str | None = None,
         dummy: bool = False,
     ) -> None:
+        self._log(
+            f"connect(dummy={dummy}, file_path={file_path}, vendor_id={hex(vendor_id)}, product_id={hex(product_id)})"
+        )
         self.disconnect()
         if dummy:
             self._set_dummy()
+            self._log("mode=dummy")
             return
 
         if file_path:
@@ -40,13 +52,16 @@ class EscPosPrinter:
                 test_printer.close()
                 self._mode = "file"
                 self._file_path = file_path
-                self._connection_info = f"共有プリンタ: {file_path}"
+                self._connection_info = f"Shared printer: {file_path}"
+                self._log(f"mode=file, connection={self._connection_info}")
                 return
-            except Exception:
+            except Exception as exc:
+                self._log(f"file mode connect failed: {exc!r}")
                 self._set_dummy()
                 return
 
         if not self._usb_backend_available():
+            self._log("usb backend unavailable -> fallback dummy")
             self._set_dummy()
             return
 
@@ -58,22 +73,23 @@ class EscPosPrinter:
             printer.close()
             self._printer = printer
             self._mode = "usb"
-            self._connection_info = f"USBプリンタ: {hex(vendor_id)}:{hex(product_id)}"
-        except Exception:
+            self._connection_info = f"USB printer: {hex(vendor_id)}:{hex(product_id)}"
+            self._log(f"mode=usb, connection={self._connection_info}")
+        except Exception as exc:
+            self._log(f"usb mode connect failed: {exc!r}")
             self._set_dummy()
 
     def disconnect(self) -> None:
+        self._log(f"disconnect(mode={self._mode})")
         if self._printer is not None:
-            try:
-                self._printer.close()
-            except Exception:
-                pass
+            self._safe_close(self._printer)
         self._printer = None
         self._file_path = None
         self._mode = "unconnected"
         self._connection_info = ""
 
     def print_image(self, image: Image.Image, save_image: bool = False) -> Path | None:
+        self._log(f"print_image(mode={self._mode}, save_image={save_image}, size={image.size})")
         save_path = self._save_image(image) if save_image or self._mode in {"dummy", "unconnected"} else None
 
         if self._mode == "file" and self._file_path:
@@ -82,17 +98,23 @@ class EscPosPrinter:
 
                 printer = File(self._file_path, profile=RECEIPT_PROFILE)
                 printer.image(image)
-                printer.cut()
-                printer.close()
+                self._cut(printer, shared_mode=True)
+                self._safe_close(printer)
             except Exception as exc:
-                raise PrinterError(f"共有プリンタへの印刷に失敗しました: {exc}") from exc
+                self._log(f"file print failed: {exc!r}")
+                raise PrinterError(f"Shared printer print failed: {exc}") from exc
+
         elif self._mode == "usb" and self._printer is not None:
             try:
+                self._printer.open()
                 self._printer.image(image)
-                self._printer.cut()
+                self._cut(self._printer, shared_mode=False)
+                self._safe_close(self._printer)
             except Exception as exc:
-                raise PrinterError(f"USBプリンタへの印刷に失敗しました: {exc}") from exc
+                self._log(f"usb print failed: {exc!r}")
+                raise PrinterError(f"USB print failed: {exc}") from exc
 
+        self._log(f"print_image complete, save_path={save_path}")
         return save_path
 
     def is_connected(self) -> bool:
@@ -100,17 +122,24 @@ class EscPosPrinter:
 
     def get_status_message(self) -> str:
         if self._mode == "unconnected":
-            return "プリンタ未接続"
+            return "Printer not connected"
         if self._mode == "dummy":
-            return "シミュレーション中"
-        return f"接続中: {self._connection_info}"
+            return "Dummy printer mode"
+        return f"Connected: {self._connection_info}"
 
     def get_mode(self) -> str:
         return self._mode
 
     def _set_dummy(self) -> None:
         self._mode = "dummy"
-        self._connection_info = "シミュレーション"
+        self._connection_info = "Dummy printer"
+        self._log("set dummy mode")
+
+    def _log(self, message: str) -> None:
+        if not self._debug:
+            return
+        now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[EscPosPrinter {now}] {message}", file=sys.stderr, flush=True)
 
     @staticmethod
     def _usb_backend_available() -> bool:
@@ -129,3 +158,110 @@ class EscPosPrinter:
         output_path = output_dir / filename
         image.save(output_path, format="PNG")
         return output_path
+
+    @staticmethod
+    def _safe_close(printer: Any) -> None:
+        try:
+            printer.close()
+        except Exception:
+            pass
+
+    def _cut(self, printer: Any, shared_mode: bool) -> None:
+        # Feed first for 58mm devices that ignore cut near bottom edge.
+        try:
+            printer.feed(6)
+            self._log("cut: feed(6) ok")
+        except Exception:
+            self._log("cut: feed(6) failed, trying raw newlines")
+            try:
+                printer._raw(b"\n\n\n\n\n\n")
+                self._log("cut: raw newlines ok")
+            except Exception:
+                self._log("cut: raw newlines failed")
+
+        # Standard mode:
+        # - USB: single command priority to avoid double-cut.
+        # - Shared printer: short sequence to survive spooler/driver conversion.
+        if not self._cut_experiment:
+            if shared_mode:
+                self._log("cut: shared mode short sequence")
+                self._shared_cut_sequence(printer)
+                return
+            try:
+                printer.cut(mode="PART")
+                self._log("cut: cut(mode='PART') ok")
+                return
+            except Exception:
+                self._log("cut: cut(mode='PART') failed")
+            try:
+                printer.cut()
+                self._log("cut: cut() ok")
+                return
+            except Exception:
+                self._log("cut: cut() failed")
+            if hasattr(printer, "_raw"):
+                self._log("cut: trying raw GS V 01")
+                printer._raw(b"\x1d\x56\x01")
+                self._log("cut: raw GS V 01 sent")
+            return
+
+        try:
+            printer.cut(mode="PART")
+            self._log("cut: cut(mode='PART') ok")
+        except Exception:
+            self._log("cut: cut(mode='PART') failed")
+        try:
+            printer.cut(mode="FULL")
+            self._log("cut: cut(mode='FULL') ok")
+        except Exception:
+            self._log("cut: cut(mode='FULL') failed")
+        try:
+            printer.cut()
+            self._log("cut: cut() ok")
+        except Exception:
+            self._log("cut: cut() failed")
+
+        if not hasattr(printer, "_raw"):
+            self._log("cut: raw unavailable")
+            return
+
+        if self._cut_experiment:
+            self._log("cut: experiment mode enabled")
+            raw_patterns: list[tuple[str, bytes]] = [
+                ("GS V 00 full cut", b"\x1d\x56\x00"),
+                ("GS V 01 partial cut", b"\x1d\x56\x01"),
+                ("GS V 41 00 full cut", b"\x1d\x56\x41\x00"),
+                ("GS V 42 00 partial cut", b"\x1d\x56\x42\x00"),
+            ]
+            for label, payload in raw_patterns:
+                try:
+                    self._log(f"cut: trying raw {label}")
+                    printer._raw(payload)
+                    self._log(f"cut: raw {label} sent")
+                except Exception as exc:
+                    self._log(f"cut: raw {label} failed: {exc!r}")
+            return
+
+    def _shared_cut_sequence(self, printer: Any) -> None:
+        # Send exactly one cut command in shared mode to avoid multi-cut.
+        if not hasattr(printer, "_raw"):
+            try:
+                printer.cut(mode="PART")
+                self._log("cut: shared cut(mode='PART') ok")
+            except Exception as exc:
+                self._log(f"cut: shared cut(mode='PART') failed: {exc!r}")
+            return
+
+        mapping: dict[str, tuple[str, bytes]] = {
+            "gs_v_00": ("GS V 00", b"\x1d\x56\x00"),
+            "gs_v_01": ("GS V 01", b"\x1d\x56\x01"),
+            "gs_v_41_00": ("GS V 41 00", b"\x1d\x56\x41\x00"),
+            "gs_v_42_00": ("GS V 42 00", b"\x1d\x56\x42\x00"),
+        }
+        label, payload = mapping.get(self._shared_cut_cmd, mapping["gs_v_42_00"])
+        try:
+            self._log(f"cut: shared trying raw {label}")
+            printer._raw(payload)
+            self._log(f"cut: shared raw {label} sent")
+        except Exception as exc:
+            self._log(f"cut: shared raw {label} failed: {exc!r}")
