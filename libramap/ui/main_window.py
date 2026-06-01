@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         floor_data: dict,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("LibraMap - 蝗ｳ譖ｸ鬢ｨ霑泌唆謾ｯ謠ｴ")
+        self.setWindowTitle("LibraMap - 図書館返却支援")
         self.setMinimumSize(1000, 720)
 
         self._barcode_processor = barcode_processor
@@ -116,13 +116,13 @@ class MainWindow(QMainWindow):
         main.setSpacing(18)
 
         header = QHBoxLayout()
-        title = QLabel("LibraMap 霑泌唆謾ｯ謠ｴ")
+        title = QLabel("LibraMap 返却支援")
         title.setFont(QFont("Meiryo", 26, QFont.Weight.Bold))
         header.addWidget(title)
         header.addStretch(1)
 
         self._printer_selector = QComboBox()
-        self._printer_selector.addItems(["繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ", "蜈ｱ譛峨・繝ｪ繝ｳ繧ｿ", "USB繝励Μ繝ｳ繧ｿ"])
+        self._printer_selector.addItems(["シミュレーション", "共有プリンタ", "USBプリンタ"])
         self._printer_selector.currentIndexChanged.connect(self._on_printer_changed)
         self._printer_status = QLabel(self._printer.get_status_message())
         self._printer_status.setMinimumWidth(220)
@@ -131,12 +131,12 @@ class MainWindow(QMainWindow):
         main.addLayout(header)
         self._printer_selector.setCurrentIndex(1)
 
-        self._scan_label = QLabel("ISBN-13 縺ｾ縺溘・ 192邉ｻJAN繧偵せ繧ｭ繝｣繝ｳ縺励※縺上□縺輔＞")
+        self._scan_label = QLabel("ISBN-13 または 192系JANをスキャンしてください")
         self._scan_label.setFont(QFont("Meiryo", 16, QFont.Weight.Bold))
         main.addWidget(self._scan_label)
 
         self._scan_input = QLineEdit()
-        self._scan_input.setPlaceholderText("繝舌・繧ｳ繝ｼ繝牙・蜉帛ｾ・Enter")
+        self._scan_input.setPlaceholderText("バーコード入力後 Enter")
         self._scan_input.returnPressed.connect(self._on_scan_submitted)
         main.addWidget(self._scan_input)
 
@@ -147,9 +147,9 @@ class MainWindow(QMainWindow):
         frame_layout.setSpacing(24)
 
         left = QVBoxLayout()
-        self._status_title = QLabel("蠕・ｩ滉ｸｭ")
+        self._status_title = QLabel("待機中")
         self._status_title.setFont(QFont("Meiryo", 24, QFont.Weight.Bold))
-        self._status_body = QLabel("霑泌唆雉・侭縺ｮ繝舌・繧ｳ繝ｼ繝峨ｒ繧ｹ繧ｭ繝｣繝ｳ縺励※縺上□縺輔＞縲・)
+        self._status_body = QLabel("返却資料のバーコードをスキャンしてください。")
         self._status_body.setFont(QFont("Meiryo", 20))
         self._status_body.setWordWrap(True)
         left.addWidget(self._status_title)
@@ -164,7 +164,7 @@ class MainWindow(QMainWindow):
         main.addWidget(self._result_frame, 1)
 
         buttons = QHBoxLayout()
-        self._clear_button = QPushButton("繧ｯ繝ｪ繧｢ (Esc)")
+        self._clear_button = QPushButton("クリア (Esc)")
         self._clear_button.clicked.connect(self._on_clear)
         buttons.addWidget(self._clear_button)
         buttons.addStretch(1)
@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
         result = self._barcode_processor.process(raw)
         if self._state == UIState.WAITING_ISBN_SCAN:
             if result.barcode_type != BarcodeType.ISBN13 or not result.isbn:
-                self._show_pending("ISBN-13繧偵せ繧ｭ繝｣繝ｳ縺励※縺上□縺輔＞縲ゆｸｭ豁｢縺吶ｋ蝣ｴ蜷医・Esc繧呈款縺励※縺上□縺輔＞縲・)
+                self._show_pending("ISBN-13をスキャンしてください。中止する場合はEscを押してください。")
                 return
             self._state = UIState.WAITING_SCAN
             self._pending_jan = None
@@ -203,11 +203,11 @@ class MainWindow(QMainWindow):
         elif result.barcode_type == BarcodeType.JAN_192:
             self._state = UIState.WAITING_ISBN_SCAN
             self._pending_jan = result.raw
-            self._show_pending("192邉ｻJAN繧貞女縺台ｻ倥￠縺ｾ縺励◆縲らｶ壹￠縺ｦ雉・侭譛ｬ菴薙・ISBN-13繧偵せ繧ｭ繝｣繝ｳ縺励※縺上□縺輔＞縲・)
+            self._show_pending("192系JANを受け付けました。続けて資料本体のISBN-13をスキャンしてください。")
         elif result.barcode_type == BarcodeType.JAN_OTHER:
-            self._show_error("髱槫ｯｾ蠢廱AN縺ｧ縺吶・SBN-13縲√∪縺溘・192邉ｻJAN繧剃ｽｿ逕ｨ縺励※縺上□縺輔＞縲・)
+            self._show_error("非対応JANです。ISBN-13、または192系JANを使用してください。")
         else:
-            self._show_error("繝舌・繧ｳ繝ｼ繝峨ｒ蛻､螳壹〒縺阪∪縺帙ｓ縲りｪｭ縺ｿ蜿悶ｊ蜀・ｮｹ繧堤｢ｺ隱阪＠縺ｦ縺上□縺輔＞縲・)
+            self._show_error("バーコードを判定できません。読み取り内容を確認してください。")
 
     def _process_isbn(self, isbn: str) -> None:
         record = self._local_db.find_by_isbn(isbn)
@@ -222,19 +222,17 @@ class MainWindow(QMainWindow):
                 if cached:
                     info = cached
 
-            title = getattr(info, "title", "") or "譛ｪ逋ｻ骭ｲ雉・侭"
+            title = getattr(info, "title", "") or "未登録資料"
             creator = getattr(info, "creator", "")
             ndc = getattr(info, "ndc", "")
             placement = PlacementResult(
                 found=False,
-                message="鬢ｨ蜀・鳩譖ｸDB縺ｫ譛ｪ逋ｻ骭ｲ縺ｧ縺吶ら嶌莠貞茜逕ｨ繝ｻ譛ｪ逋ｻ骭ｲ雉・侭縺ｮ蜿ｯ閭ｽ諤ｧ縺後≠繧翫∪縺吶・,
+                message="蔵書DBに未登録の資料です。画面表示とレシートを確認し、手動で返却先を確認してください。",
             )
             receipt_data = ReceiptData(title, creator, isbn, ndc, placement)
             save_path = self._printer.print_image(self._receipt_renderer.render(receipt_data), save_image=True)
-            suffix = f"\n繝ｬ繧ｷ繝ｼ繝育判蜒・ {save_path.name}" if save_path else ""
-            self._show_error(
-                f"蟇ｾ雎｡螟冶ｳ・侭縺ｧ縺吶・nISBN: {isbn}\n譖ｸ蜷・ {title}\n隕∵焔蜍戊ｿ泌唆遒ｺ隱阪・suffix}"
-            )
+            suffix = f"\nレシート画像: {save_path.name}" if save_path else ""
+            self._show_error(f"対象外資料です。\nISBN: {isbn}\n書名: {title}\n要手動返却確認。{suffix}")
             return
 
         title = record.title
@@ -260,7 +258,7 @@ class MainWindow(QMainWindow):
         placement = self._placement_engine.determine(ndc, record.is_restricted)
         rows, cols = self._get_shelf_size(placement.segment.shelf_id) if placement.segment else (5, 8)
         receipt_data = ReceiptData(
-            title=title or "譖ｸ蜷堺ｸ肴・",
+            title=title or "書名不明",
             creator=creator,
             isbn=isbn,
             ndc=ndc,
@@ -282,10 +280,10 @@ class MainWindow(QMainWindow):
                     highlight_segment=placement.segment,
                 )
             )
-            suffix = f"\n繝ｬ繧ｷ繝ｼ繝育判蜒・ {save_path.name}" if save_path else ""
-            self._show_success(f"{title}\nNDC: {ndc}\n霑泌唆蜈・ {placement.message}{suffix}")
+            suffix = f"\nレシート画像: {save_path.name}" if save_path else ""
+            self._show_success(f"{title}\nNDC: {ndc}\n返却先: {placement.message}{suffix}")
         else:
-            suffix = f"\n繝ｬ繧ｷ繝ｼ繝育判蜒・ {save_path.name}" if save_path else ""
+            suffix = f"\nレシート画像: {save_path.name}" if save_path else ""
             self._map_label.clear()
             self._show_error(f"{title}\n{placement.message}{suffix}")
 
@@ -317,23 +315,23 @@ class MainWindow(QMainWindow):
 
     def _show_success(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_OK)
-        self._status_title.setText("霑泌唆蜈医ｒ蛻､螳壹＠縺ｾ縺励◆")
+        self._status_title.setText("返却先を判定しました")
         self._status_body.setText(message)
 
     def _show_warning(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_WARN)
-        self._status_title.setText("遖∝ｸｯ蜃ｺ雉・侭")
+        self._status_title.setText("要注意資料")
         self._status_body.setText(message)
 
     def _show_error(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_ERROR)
-        self._status_title.setText("隕∵焔蜍慕｢ｺ隱・)
+        self._status_title.setText("エラー")
         self._status_body.setText(message)
         self._map_label.clear()
 
     def _show_pending(self, message: str) -> None:
         self._result_frame.setStyleSheet(self.FRAME_PENDING)
-        self._status_title.setText("霑ｽ蜉繧ｹ繧ｭ繝｣繝ｳ蠕・■")
+        self._status_title.setText("追加スキャン待ち")
         self._status_body.setText(message)
         self._map_label.clear()
 
@@ -343,8 +341,8 @@ class MainWindow(QMainWindow):
         self._pending_jan = None
         self._scan_input.clear()
         self._result_frame.setStyleSheet(self.FRAME_BASE)
-        self._status_title.setText("蠕・ｩ滉ｸｭ")
-        self._status_body.setText("霑泌唆雉・侭縺ｮ繝舌・繧ｳ繝ｼ繝峨ｒ繧ｹ繧ｭ繝｣繝ｳ縺励※縺上□縺輔＞縲・)
+        self._status_title.setText("待機中")
+        self._status_body.setText("返却資料のバーコードをスキャンしてください。")
         self._map_label.clear()
         self._scan_input.setFocus()
 
@@ -353,5 +351,3 @@ class MainWindow(QMainWindow):
             self._on_clear()
             return
         super().keyPressEvent(event)
-
-
