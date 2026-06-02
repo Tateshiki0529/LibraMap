@@ -7,6 +7,7 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 from libramap.core.placement_engine import PlacementResult, ShelfSegment
+from libramap.ndc_map import get_ndc_label
 
 
 RECEIPT_WIDTH_PX = 384
@@ -49,7 +50,7 @@ class ReceiptRenderer:
             _truncate(data.title or "書名不明", 22),
             _truncate(data.creator, 26) if data.creator else "",
             f"ISBN: {data.isbn}",
-            f"NDC: {data.ndc or '未取得'}",
+            _format_ndc_line(data.ndc),
         ]
         if data.placement.segment:
             lines.append(f"{data.placement.segment.floor_name} / 書架 {data.placement.segment.shelf_id}")
@@ -269,3 +270,13 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 def _truncate(text: str, length: int) -> str:
     return text if len(text) <= length else f"{text[: length - 1]}…"
+
+
+def _format_ndc_line(ndc: str | None) -> str:
+    if not ndc:
+        return "NDC: 未取得"
+
+    label = get_ndc_label(ndc)
+    if label is None:
+        return f"NDC: {ndc}"
+    return f"NDC: {ndc} ({label})"
