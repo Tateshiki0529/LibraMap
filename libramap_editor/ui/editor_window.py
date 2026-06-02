@@ -5,6 +5,9 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QAbstractScrollArea,
+    QBoxLayout,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -18,7 +21,10 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -41,6 +47,34 @@ NDC_MAJOR_CLASSES = [
     ("8", "言語"),
     ("9", "文学"),
 ]
+
+class ResponsiveNdcRow(QWidget):
+    def __init__(self, major: QComboBox, minor: QComboBox, threshold: int = 420) -> None:
+        super().__init__()
+        self._threshold = threshold
+        self._layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(6)
+        self._major = major
+        self._minor = minor
+        self._major.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._minor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._layout.addWidget(self._major, 1)
+        self._layout.addWidget(self._minor, 2)
+        self._update_direction()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_direction()
+
+    def _update_direction(self) -> None:
+        direction = (
+            QBoxLayout.Direction.TopToBottom
+            if self.width() < self._threshold
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if self._layout.direction() != direction:
+            self._layout.setDirection(direction)
 
 
 class EditorWindow(QMainWindow):
@@ -143,7 +177,8 @@ class EditorWindow(QMainWindow):
         self._loading = False
 
         self.setWindowTitle("LibraMap Editor")
-        self.setMinimumSize(1180, 760)
+        self.resize(1240, 780)
+        self.setMinimumSize(960, 680)
         self._setup_ui()
         self.setStyleSheet(self.STYLE_SHEET)
         self._refresh_all()
@@ -159,12 +194,17 @@ class EditorWindow(QMainWindow):
 
         root.addLayout(self._build_toolbar())
 
-        body = QHBoxLayout()
-        body.setSpacing(14)
-        body.addLayout(self._build_left_panel(), 0)
-        body.addLayout(self._build_center_panel(), 1)
-        body.addLayout(self._build_right_panel(), 0)
-        root.addLayout(body, 1)
+        body = QSplitter(Qt.Orientation.Horizontal)
+        body.setChildrenCollapsible(False)
+        body.setHandleWidth(10)
+        body.addWidget(self._build_left_panel())
+        body.addWidget(self._build_center_panel())
+        body.addWidget(self._build_right_panel())
+        body.setStretchFactor(0, 0)
+        body.setStretchFactor(1, 1)
+        body.setStretchFactor(2, 0)
+        body.setSizes([240, 620, 360])
+        root.addWidget(body, 1)
 
         self._status_label = QLabel("")
         root.addWidget(self._status_label)
@@ -191,8 +231,15 @@ class EditorWindow(QMainWindow):
         layout.addWidget(self._validate_button)
         return layout
 
-    def _build_left_panel(self) -> QVBoxLayout:
-        layout = QVBoxLayout()
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._refresh_preview()
+
+    def _build_left_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setMinimumWidth(220)
+        panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout = QVBoxLayout(panel)
         layout.setSpacing(8)
 
         floor_header = QHBoxLayout()
@@ -222,41 +269,65 @@ class EditorWindow(QMainWindow):
         self._object_list = QListWidget()
         self._object_list.currentItemChanged.connect(self._on_object_selected)
         layout.addWidget(self._object_list, 2)
-        return layout
+        return panel
 
-    def _build_center_panel(self) -> QVBoxLayout:
-        layout = QVBoxLayout()
+    def _build_center_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setMinimumWidth(320)
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout = QVBoxLayout(panel)
         layout.setSpacing(8)
         layout.addWidget(QLabel("プレビュー"))
 
         self._preview = QLabel()
-        self._preview.setMinimumSize(640, 360)
+        self._preview.setMinimumSize(320, 240)
+        self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setStyleSheet("background:#ffffff;border:1px solid #d1d5db;border-radius:6px;")
         layout.addWidget(self._preview, 1)
-        return layout
+        return panel
 
-    def _build_right_panel(self) -> QVBoxLayout:
-        layout = QVBoxLayout()
+    def _build_right_panel(self) -> QWidget:
+        container = QWidget()
+        container.setMinimumWidth(300)
+        container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        outer.addWidget(scroll)
+
+        content = QWidget()
+        content.setMinimumWidth(280)
+        scroll.setWidget(content)
+
+        layout = QVBoxLayout(content)
         layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
 
         object_frame = QFrame()
         object_frame.setObjectName("objectFormFrame")
         object_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        object_frame.setMinimumWidth(340)
+        object_frame.setMinimumWidth(0)
+        object_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         form = QFormLayout(object_frame)
         form.setContentsMargins(12, 12, 12, 12)
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self._object_id = QLineEdit()
-        self._object_id.setMinimumWidth(220)
         self._object_id.setMinimumHeight(30)
+        self._object_id.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._object_id.editingFinished.connect(self._apply_object_form)
         self._object_type = QComboBox()
-        self._object_type.setMinimumWidth(220)
+        self._object_type.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._object_type.addItems(list(OBJECT_TYPES))
         self._object_type.currentTextChanged.connect(self._apply_object_form)
         self._x = self._spin(0, 5000)
@@ -267,7 +338,7 @@ class EditorWindow(QMainWindow):
         self._cols = self._spin(1, 50)
 
         for spin in (self._x, self._y, self._width, self._height, self._rows, self._cols):
-            spin.setMinimumWidth(220)
+            spin.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             spin.valueChanged.connect(self._apply_object_form)
 
         form.addRow("ID", self._object_id)
@@ -292,8 +363,16 @@ class EditorWindow(QMainWindow):
 
         self._segments = QTableWidget(0, 5)
         self._segments.setHorizontalHeaderLabels(["段", "開始列", "終了列", "NDC開始", "NDC終了"])
-        self._segments.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header = self._segments.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self._segments.setAlternatingRowColors(True)
+        self._segments.setWordWrap(False)
+        self._segments.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._segments.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self._segments.setMinimumHeight(180)
         self._segments.itemChanged.connect(self._apply_segment_table)
         self._segments.currentCellChanged.connect(self._on_segment_row_changed)
@@ -303,11 +382,10 @@ class EditorWindow(QMainWindow):
         self._ndc_start_major = QComboBox()
         self._ndc_start_minor = QComboBox()
         self._ndc_start_manual = QLineEdit()
+        self._ndc_start_manual.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._ndc_start_manual.setPlaceholderText("例: 913.6")
         self._populate_ndc_selectors(self._ndc_start_major, self._ndc_start_minor)
-        start_line = QHBoxLayout()
-        start_line.addWidget(self._ndc_start_major, 1)
-        start_line.addWidget(self._ndc_start_minor, 2)
+        start_line = ResponsiveNdcRow(self._ndc_start_major, self._ndc_start_minor)
         form.addRow("類/3桁", start_line)
         form.addRow("手動", self._ndc_start_manual)
 
@@ -315,11 +393,10 @@ class EditorWindow(QMainWindow):
         self._ndc_end_major = QComboBox()
         self._ndc_end_minor = QComboBox()
         self._ndc_end_manual = QLineEdit()
+        self._ndc_end_manual.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._ndc_end_manual.setPlaceholderText("例: 999")
         self._populate_ndc_selectors(self._ndc_end_major, self._ndc_end_minor)
-        end_line = QHBoxLayout()
-        end_line.addWidget(self._ndc_end_major, 1)
-        end_line.addWidget(self._ndc_end_minor, 2)
+        end_line = ResponsiveNdcRow(self._ndc_end_major, self._ndc_end_minor)
         form.addRow("類/3桁", end_line)
         form.addRow("手動", self._ndc_end_manual)
 
@@ -329,7 +406,8 @@ class EditorWindow(QMainWindow):
         self._ndc_end_minor.currentTextChanged.connect(self._on_ndc_minor_changed)
         self._ndc_start_manual.editingFinished.connect(self._on_ndc_manual_changed)
         self._ndc_end_manual.editingFinished.connect(self._on_ndc_manual_changed)
-        return layout
+        layout.addStretch(1)
+        return container
 
     @staticmethod
     def _spin(minimum: int, maximum: int) -> QSpinBox:
