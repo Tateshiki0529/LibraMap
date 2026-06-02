@@ -1,13 +1,15 @@
-## 変更内容
+## Checklist
 
-- 
+- [ ] `docs/dev-memory.md` を作業前に確認した
+- [ ] GitHub本文（PR/Issue/コメント）は human-readable で記述した
+- [ ] 本文更新は UTF-8 の `--body-file` 経由で行った（必要時）
+- [ ] `\n` エスケープ文字が本文に露出していない
+- [ ] 文字化けがないことを表示確認した
 
-## 確認
+## Summary
 
-- [ ] `python -m unittest discover -s tests`
-- [ ] GUI起動確認
-- [ ] レシート画像確認
+<!-- 変更内容を簡潔に記載 -->
 
-## 補足
+## Notes
 
-- 
+<!-- 補足があれば記載 -->

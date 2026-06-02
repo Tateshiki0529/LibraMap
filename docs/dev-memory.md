@@ -2,6 +2,11 @@
 
 ## 2026-06-02
 
+- `backup/local-master-before-sync` を確認し、現 `master` に欠けていた運用ファイルを `docs/restore-agent-workflow-files` で復元。
+- 復元内容:
+  - `AGENTS.md` を再追加
+  - `.github/pull_request_template.md` を UTF-8 で再作成
+
 - Issue #6 (`feat: レシート - NDC分類名印字`) を `feat/issue-6-receipt-ndc-label` で実装。
 - 実装方針: レシート描画時に `ndc_map.get_ndc_label()` を使って NDC 行を整形し、分類名が取れない場合のみコード表示へフォールバック。
 - 追加ファイル:
