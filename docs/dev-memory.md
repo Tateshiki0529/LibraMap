@@ -2,6 +2,16 @@
 
 ## 2026-06-02
 
+- Issue #8 (`bug: Editor 初期ウィンドウサイズでUI崩れ（レスポンシブ対応）`) を `fix/issue-8-editor-responsive-layout` で実装。
+- 実装方針: Editor本体を `QSplitter` に変更し、右ペインをスクロール化、NDC 2段階セレクトを狭幅時に縦積み、セグメント表のカラム幅ポリシーを見直して初期サイズでも崩れにくくした。
+- 追加ファイル:
+  - `tests/test_editor_window.py`
+- 更新ファイル:
+  - `libramap_editor/ui/editor_window.py`
+  - `docs/dev-memory.md`
+- テスト:
+  - `python -m unittest tests.test_editor_model tests.test_editor_window -v`
+
 - `backup/local-master-before-sync` を確認し、現 `master` に欠けていた運用ファイルを `docs/restore-agent-workflow-files` で復元。
 - 復元内容:
   - `AGENTS.md` を再追加
